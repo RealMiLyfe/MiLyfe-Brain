@@ -1,0 +1,97 @@
+version: "3.8"
+
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "${CHROMA_PORT:-8400}:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+      - ALLOW_RESET=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6479}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PORT:-8200}:8200"
+    volumes:
+      - workspace_data:/workspace
+      - db_data:/data
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - DEFAULT_LIGHT_MODEL=${DEFAULT_LIGHT_MODEL:-phi3:mini}
+      - DEFAULT_HEAVY_MODEL=${DEFAULT_HEAVY_MODEL:-llama3.1:8b}
+      - PREMIUM_MODEL=${PREMIUM_MODEL:-llama3.1:70b}
+      - MAX_AGENTS=${MAX_AGENTS:-10}
+      - REQUIRE_APPROVAL_DESTRUCTIVE=${REQUIRE_APPROVAL_DESTRUCTIVE:-true}
+      - REQUIRE_APPROVAL_BROWSING=${REQUIRE_APPROVAL_BROWSING:-true}
+      - REQUIRE_APPROVAL_GUI=${REQUIRE_APPROVAL_GUI:-true}
+      - AUTO_GIT_SNAPSHOTS=${AUTO_GIT_SNAPSHOTS:-true}
+      - CONTEXT_SUMMARIZE_THRESHOLD=${CONTEXT_SUMMARIZE_THRESHOLD:-32000}
+      - MAX_RETRIES=${MAX_RETRIES:-3}
+      - AGENT_TIMEOUT=${AGENT_TIMEOUT:-300}
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - API_KEY=${API_KEY:-change-me-to-a-real-secret}
+      - CORS_ALLOW_ALL=${CORS_ALLOW_ALL:-true}
+      - DATABASE_URL=sqlite:////data/milyfe.db
+      - WORKSPACE_DIR=/workspace
+    depends_on:
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:${BACKEND_PORT:-8200}
+      - NEXT_PUBLIC_WS_URL=ws://localhost:${BACKEND_PORT:-8200}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  chroma_data:
+  redis_data:
+  workspace_data:
+  db_data:
