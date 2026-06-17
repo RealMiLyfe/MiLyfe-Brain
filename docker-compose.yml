@@ -80,11 +80,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8200
     container_name: milyfe-frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8200
+      - NEXT_PUBLIC_API_URL=http://localhost:8200
       - NODE_ENV=production
     depends_on:
       backend:
