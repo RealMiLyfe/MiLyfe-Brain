@@ -10,12 +10,8 @@ services:
     environment:
       - ANONYMIZED_TELEMETRY=false
       - ALLOW_RESET=true
-    healthcheck:
-      test: ["CMD-SHELL", "wget --spider --quiet http://localhost:8000/api/v1/heartbeat || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
     restart: unless-stopped
 
   redis:
@@ -65,7 +61,7 @@ services:
       - WORKSPACE_DIR=/workspace
     depends_on:
       chromadb:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
     extra_hosts:
