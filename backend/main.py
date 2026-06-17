@@ -240,6 +240,7 @@ def register_routes():
     from api.routes.daemon import router as daemon_router
     from api.routes.export_import import router as export_import_router
     from api.routes.tasks import router as tasks_router
+    from api.routes.brain import router as brain_router
 
     app.include_router(health_router)
     app.include_router(playbooks_router, prefix="/api/playbooks", tags=["playbooks"])
@@ -260,6 +261,7 @@ def register_routes():
     app.include_router(daemon_router, prefix="/api/brain/daemon", tags=["daemon"])
     app.include_router(export_import_router, prefix="/api/playbooks/io", tags=["export_import"])
     app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
+    app.include_router(brain_router, prefix="/api/brain", tags=["brain"])
 
 
 register_routes()
