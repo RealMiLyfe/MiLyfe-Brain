@@ -8,11 +8,13 @@ services:
     environment:
       - ANONYMIZED_TELEMETRY=false
       - ALLOW_RESET=true
+      - IS_PERSISTENT=TRUE
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')\" || exit 1"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   redis:
