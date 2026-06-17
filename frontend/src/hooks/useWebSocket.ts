@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { useStore } from "@/lib/store";
+import { useConfetti } from "@/hooks/useConfetti";
 import type { StreamEvent } from "@/lib/api";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8200/api/stream/ws";
@@ -23,6 +24,7 @@ export function useWebSocket() {
   const addEvent = useStore((s) => s.addEvent);
   const addApproval = useStore((s) => s.addApproval);
   const setPlaybook = useStore((s) => s.setPlaybook);
+  const { fire: fireConfetti } = useConfetti();
 
   const connect = useCallback(() => {
     // Don't reconnect if already connected
@@ -68,6 +70,9 @@ export function useWebSocket() {
           if (msg.event === "playbook_completed" || msg.event === "playbook_failed") {
             // Trigger a refetch of playbook status
             // The Dashboard component can react to this event
+            if (msg.event === "playbook_completed") {
+              fireConfetti();
+            }
           }
         } catch {
           // Ignore malformed messages

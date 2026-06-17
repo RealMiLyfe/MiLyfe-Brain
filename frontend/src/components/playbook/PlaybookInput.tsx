@@ -57,16 +57,17 @@ const QUICK_TEMPLATES = [
 ];
 
 const MODELS = [
-  { id: "gpt-4o-mini", label: "GPT-4o Mini (Fast)", tier: "light" },
-  { id: "gpt-4o", label: "GPT-4o (Balanced)", tier: "heavy" },
-  { id: "o1", label: "o1 (Premium)", tier: "premium" },
-  { id: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet", tier: "heavy" },
-  { id: "claude-3-5-haiku", label: "Claude 3.5 Haiku", tier: "light" },
+  { id: "phi3:mini", label: "Phi-3 Mini (Fast)", tier: "light" },
+  { id: "llama3.1:8b", label: "Llama 3.1 8B (Balanced)", tier: "heavy" },
+  { id: "llama3.1:70b", label: "Llama 3.1 70B (Premium)", tier: "premium" },
+  { id: "qwen2.5:14b", label: "Qwen 2.5 14B", tier: "heavy" },
+  { id: "hermes3:latest", label: "Hermes 3 (Creative)", tier: "heavy" },
+  { id: "gemma2:9b", label: "Gemma 2 9B", tier: "heavy" },
 ];
 
 export function PlaybookInput() {
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState("gpt-4o");
+  const [model, setModel] = useState("llama3.1:8b");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const setPlaybook = useStore((state) => state.setPlaybook);
   const setActiveView = useStore((state) => state.setActiveView);
