@@ -16,8 +16,8 @@ router = APIRouter()
 
 @router.get("/", response_model=List[PlaybookStep])
 async def list_tasks(
-    playbook_id: str | None = None,
-    status: TaskStatus | None = None,
+    playbook_id: Optional[str] = None,
+    status: Optional[TaskStatus] = None,
     limit: int = 100,
 ):
     """List tasks (optionally filtered by playbook or status)."""

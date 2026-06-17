@@ -29,7 +29,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
-def _row_to_playbook(row: PlaybookRow, steps: list[PlaybookStepRow] | None = None) -> Playbook:
+def _row_to_playbook(row: PlaybookRow, steps: Optional[list] = None) -> Playbook:
     """Convert DB row to Playbook schema."""
     playbook_steps = []
     if steps:

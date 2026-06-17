@@ -18,7 +18,7 @@ _active_agents: Dict[str, AgentState] = {}
 class SpawnRequest(BaseModel):
     role: AgentRole
     task: str = ""
-    model_override: str | None = None
+    model_override: Optional[str] = None
 
 
 class AgentMessage(BaseModel):

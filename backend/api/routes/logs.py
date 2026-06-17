@@ -15,10 +15,10 @@ router = APIRouter()
 
 @router.get("/", response_model=List[ActionLog])
 async def get_logs(
-    agent_role: str | None = None,
-    action_type: str | None = None,
-    playbook_id: str | None = None,
-    risk_level: str | None = None,
+    agent_role: Optional[str] = None,
+    action_type: Optional[str] = None,
+    playbook_id: Optional[str] = None,
+    risk_level: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ):
@@ -56,7 +56,7 @@ async def get_logs(
 
 
 @router.get("/export")
-async def export_logs(playbook_id: str | None = None):
+async def export_logs(playbook_id: Optional[str] = None):
     """Export logs as JSON."""
     logs = await get_logs(playbook_id=playbook_id, limit=500)
     return {"logs": [log.model_dump() for log in logs], "count": len(logs)}

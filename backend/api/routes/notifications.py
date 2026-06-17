@@ -63,7 +63,7 @@ async def create_notification(
     title: str,
     message: str,
     type: str = "info",
-    data: dict | None = None,
+    data: Optional[dict] = None,
 ) -> str:
     """Create a new notification (internal helper)."""
     notif_id = str(uuid.uuid4())
