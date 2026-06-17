@@ -29,6 +29,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         logger.error(f"Database init failed: {e}")
 
+    # 1.5. Register tools and wire agent factory
+    try:
+        from tools import register_all_tools, tool_registry
+        from agents.factory import get_agent_factory
+        register_all_tools()
+        logger.info("Tool registry loaded: %d tools", tool_registry.count())
+
+        # Wire tool executor into agent factory
+        factory = get_agent_factory()
+
+        async def _execute_tool(name: str, arguments: dict) -> str:
+            """Bridge function: agent tool calls → tool registry execution."""
+            return await tool_registry.execute(name, arguments)
+
+        factory.set_tool_executor(_execute_tool)
+        logger.info("Agent factory wired to tool registry")
+    except Exception as e:
+        logger.error(f"Tool/agent wiring failed: {e}")
+
     # 2. Start queue processor
     try:
         from services.queue_manager import queue_manager
