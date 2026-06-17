@@ -1,0 +1,29 @@
+[project]
+name = "milyfe-brain"
+version = "1.0.0"
+description = "AI Agent Swarm Orchestration Platform"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "A", "SIM"]
+ignore = ["E501", "B008", "A003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agents", "api", "graphs", "memory", "models", "tools", "safety", "prompts", "hooks", "mcp", "services", "plugins"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
