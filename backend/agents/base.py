@@ -294,6 +294,23 @@ class BaseAgent(ABC):
             data = response.json()
             content = data.get("message", {}).get("content", "")
 
+            # Track token usage if available
+            try:
+                prompt_tokens = data.get("prompt_eval_count", 0)
+                completion_tokens = data.get("eval_count", 0)
+                if prompt_tokens or completion_tokens:
+                    from services.token_tracker import track_usage
+                    await track_usage(
+                        agent_id=self.id,
+                        agent_role=self.role.value,
+                        model=self.model,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        playbook_id=self.context.get("playbook_id"),
+                    )
+            except Exception as tok_err:
+                logger.debug("Token tracking failed (non-fatal): %s", tok_err)
+
             if not content:
                 logger.warning("Empty response from LLM for agent %s", self.name)
                 return ""

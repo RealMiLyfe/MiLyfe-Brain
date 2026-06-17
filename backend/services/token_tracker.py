@@ -142,3 +142,24 @@ class TokenTracker:
 
 # Singleton
 token_tracker = TokenTracker()
+
+
+
+# Convenience function for inline usage (avoids importing the class)
+async def track_usage(
+    agent_id: str,
+    agent_role: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    playbook_id: Optional[str] = None,
+) -> None:
+    """Record token usage — convenience wrapper around TokenTracker.record()."""
+    await token_tracker.record(
+        agent_id=agent_id,
+        agent_role=agent_role,
+        model=model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        playbook_id=playbook_id,
+    )
