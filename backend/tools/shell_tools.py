@@ -1,6 +1,7 @@
 """Shell execution tools for MiLyfe Brain.
 
 Provides sandboxed shell command execution with timeout and output limits.
+Integrates with the command classifier for safety checks.
 """
 
 from __future__ import annotations
@@ -9,7 +10,8 @@ import asyncio
 import logging
 from typing import Optional
 
-from backend.config import settings
+from config import settings
+from safety.command_classifier import classify_command, RISK_BLOCKED, RISK_DANGEROUS
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +25,37 @@ async def shell_exec(
 ) -> str:
     """Execute a shell command and return combined stdout/stderr.
 
+    Performs safety classification before execution. Commands classified
+    as "blocked" are rejected. "Dangerous" commands are logged prominently.
+
     Args:
         command: The shell command string to execute.
         cwd: Working directory for the command. Defaults to workspace_dir.
-        timeout: Maximum execution time in seconds (default 30).
+        timeout: Maximum execution time in seconds (default 30, max 300).
 
     Returns:
         Combined stdout and stderr output, truncated if exceeding MAX_OUTPUT_CHARS.
     """
     work_dir = cwd or settings.workspace_dir
 
-    logger.info("shell_exec: command=%r cwd=%s timeout=%d", command, work_dir, timeout)
+    # Enforce max timeout
+    timeout = min(timeout, 300)
+
+    # Safety classification
+    classification = classify_command(command)
+    risk_level = classification["risk_level"]
+    reasons = classification.get("reasons", [])
+
+    if risk_level == RISK_BLOCKED:
+        reason_str = "; ".join(str(r) for r in reasons)
+        logger.warning("BLOCKED shell command: %r — %s", command, reason_str)
+        return f"[BLOCKED] Command rejected for safety: {reason_str}"
+
+    if risk_level == RISK_DANGEROUS:
+        reason_str = "; ".join(str(r) for r in reasons)
+        logger.warning("DANGEROUS shell command (proceeding with approval): %r — %s", command, reason_str)
+
+    logger.info("shell_exec: command=%r cwd=%s timeout=%d risk=%s", command, work_dir, timeout, risk_level)
 
     try:
         process = await asyncio.create_subprocess_shell(

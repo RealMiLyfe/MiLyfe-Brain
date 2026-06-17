@@ -26,7 +26,7 @@ async def batch_execute(calls: List[Dict[str, Any]]) -> str:
         JSON-formatted string with results for each call.
     """
     # Import here to avoid circular imports
-    from backend.tools.registry import tool_registry
+    from tools.registry import tool_registry
 
     if not calls:
         return "[ERROR] No calls provided to batch_execute."

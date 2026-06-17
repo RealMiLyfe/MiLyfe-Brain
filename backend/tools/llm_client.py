@@ -10,7 +10,7 @@ from typing import Optional
 
 import httpx
 
-from backend.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 
