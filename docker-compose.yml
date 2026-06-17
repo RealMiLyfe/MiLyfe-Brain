@@ -9,12 +9,6 @@ services:
       - ANONYMIZED_TELEMETRY=false
       - ALLOW_RESET=true
       - IS_PERSISTENT=TRUE
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')\" || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
     restart: unless-stopped
 
   redis:
@@ -62,7 +56,7 @@ services:
       - CORS_ALLOW_ALL=${CORS_ALLOW_ALL:-true}
     depends_on:
       chromadb:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
     extra_hosts:
