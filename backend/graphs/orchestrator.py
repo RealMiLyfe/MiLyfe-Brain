@@ -89,24 +89,35 @@ class Orchestrator:
                         playbook_id, layer_idx, len(layer),
                     )
 
-                    # Execute all steps in this layer in parallel
+                    # Execute all steps in this layer in parallel with per-step timeout
+                    step_timeout = settings.agent_timeout  # Default 300s
                     tasks = [
-                        self._execute_step(step, db, playbook_id)
+                        asyncio.wait_for(
+                            self._execute_step(step, db, playbook_id),
+                            timeout=step_timeout,
+                        )
                         for step in layer
                     ]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
 
                     # Check for failures
                     for i, result in enumerate(results):
-                        if isinstance(result, Exception):
+                        if isinstance(result, asyncio.TimeoutError):
                             step = layer[i]
-                            logger.error(
-                                "Step %s failed: %s", step.id, result
-                            )
-                            step.status = "failed"
-                            step.result = str(result)
-                            step.completed_at = datetime.utcnow()
-                            await db.commit()
+                            logger.error("Step %s timed out after %ds", step.id, step_timeout)
+                            # Update step status in its own session
+                            async with async_session_factory() as timeout_db:
+                                from sqlalchemy import update as sa_update
+                                await timeout_db.execute(
+                                    sa_update(PlaybookStepModel)
+                                    .where(PlaybookStepModel.id == step.id)
+                                    .values(status="failed", result=f"Timed out after {step_timeout}s", completed_at=datetime.utcnow())
+                                )
+                                await timeout_db.commit()
+                            await self._emit_event("step_failed", playbook_id=playbook_id, step_id=step.id, error=f"Timeout after {step_timeout}s")
+                        elif isinstance(result, Exception):
+                            step = layer[i]
+                            logger.error("Step %s failed: %s", step.id, result)
 
                 # Mark playbook completed
                 playbook.status = "completed"

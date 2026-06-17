@@ -305,7 +305,7 @@ class BaseAgent(ABC):
         return final_response
 
     async def _call_llm(self, messages: List[Dict[str, str]]) -> str:
-        """Call Ollama /api/chat endpoint.
+        """Call Ollama /api/chat endpoint with circuit breaker protection.
 
         Args:
             messages: List of message dicts with 'role' and 'content'.
@@ -314,9 +314,21 @@ class BaseAgent(ABC):
             The assistant's response text.
 
         Raises:
-            httpx.HTTPStatusError: On non-2xx response.
-            httpx.TimeoutException: On timeout.
+            httpx.HTTPStatusError: On non-2xx response (after circuit allows).
+            httpx.TimeoutException: On timeout (after circuit allows).
+            RuntimeError: If circuit breaker is open (Ollama unavailable).
         """
+        # Check circuit breaker before attempting call
+        try:
+            from services.resilience import ollama_breaker
+            if not ollama_breaker.is_available:
+                raise RuntimeError(
+                    f"Ollama circuit breaker is OPEN for agent {self.name}. "
+                    f"Service appears down. Will retry after recovery timeout."
+                )
+        except ImportError:
+            pass
+
         payload = {
             "model": self.model,
             "messages": messages,
@@ -333,6 +345,13 @@ class BaseAgent(ABC):
 
             data = response.json()
             content = data.get("message", {}).get("content", "")
+
+            # Record success with circuit breaker
+            try:
+                from services.resilience import ollama_breaker
+                ollama_breaker.record_success()
+            except ImportError:
+                pass
 
             # Track token usage if available
             try:
@@ -359,6 +378,11 @@ class BaseAgent(ABC):
 
         except httpx.TimeoutException:
             logger.error("LLM timeout for agent %s (model=%s)", self.name, self.model)
+            try:
+                from services.resilience import ollama_breaker
+                ollama_breaker.record_failure()
+            except ImportError:
+                pass
             raise
         except httpx.HTTPStatusError as e:
             logger.error(
@@ -367,8 +391,19 @@ class BaseAgent(ABC):
                 e.response.status_code,
                 e.response.text[:200],
             )
+            try:
+                from services.resilience import ollama_breaker
+                ollama_breaker.record_failure()
+            except ImportError:
+                pass
             raise
         except Exception as e:
+            if "circuit breaker" not in str(e).lower():
+                try:
+                    from services.resilience import ollama_breaker
+                    ollama_breaker.record_failure()
+                except ImportError:
+                    pass
             logger.error("LLM call failed for agent %s: %s", self.name, e)
             raise
 

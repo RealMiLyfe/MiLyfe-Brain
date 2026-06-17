@@ -122,8 +122,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     yield
 
-    # Shutdown
+    # Shutdown — graceful cleanup
     logger.info("Shutting down MiLyfe Brain")
+
+    # Cancel running playbooks gracefully
+    try:
+        from services.queue_manager import queue_manager
+        queue_manager.stop()
+        logger.info("Queue manager stopped")
+    except Exception as e:
+        logger.debug("Queue stop: %s", e)
+
+    try:
+        from services.daemon import daemon_service
+        daemon_service.stop()
+        logger.info("Daemon stopped")
+    except Exception as e:
+        logger.debug("Daemon stop: %s", e)
+
+    # Retire all active agents
+    try:
+        from agents.factory import get_agent_factory
+        factory = get_agent_factory()
+        retired = await factory.retire_all()
+        if retired:
+            logger.info("Retired %d agents on shutdown", retired)
+    except Exception as e:
+        logger.debug("Agent retirement: %s", e)
+
+    logger.info("MiLyfe Brain shutdown complete")
 
 
 # ─── App Creation ─────────────────────────────────────────────────────
