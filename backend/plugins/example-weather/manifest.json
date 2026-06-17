@@ -1,0 +1,9 @@
+{
+  "name": "example-weather",
+  "version": "1.0.0",
+  "description": "Example weather plugin — demonstrates plugin structure",
+  "author": "MiLyfe Brain",
+  "entry_point": "plugin.py",
+  "tools": ["get_weather"],
+  "permissions": ["web_search"]
+}

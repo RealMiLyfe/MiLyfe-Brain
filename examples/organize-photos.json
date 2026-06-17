@@ -1,0 +1,51 @@
+{
+  "version": "1.0",
+  "playbook": {
+    "title": "Organize Photos by Date",
+    "description": "Scan a directory of photos, extract EXIF dates, and organize them into YYYY/MM folders",
+    "raw_text": "1. Scan the ~/Photos directory for all image files (.jpg, .png, .heic)\n2. Extract EXIF date information from each photo\n3. Create year/month folders (e.g., 2024/01, 2024/02)\n4. Move photos into appropriate folders based on their date\n5. Generate a summary report of what was moved"
+  },
+  "steps": [
+    {
+      "id": "step_1",
+      "description": "Scan ~/Photos directory recursively for image files (.jpg, .jpeg, .png, .heic, .raw)",
+      "agent_role": "executor",
+      "depends_on": [],
+      "complexity": "light",
+      "tools_needed": ["glob_search", "file_list"]
+    },
+    {
+      "id": "step_2",
+      "description": "Write a Python script to extract EXIF date metadata from image files",
+      "agent_role": "coder",
+      "depends_on": ["step_1"],
+      "complexity": "medium",
+      "tools_needed": ["file_write", "code_exec"]
+    },
+    {
+      "id": "step_3",
+      "description": "Run the EXIF extraction script on all found images, collecting date information",
+      "agent_role": "executor",
+      "depends_on": ["step_2"],
+      "complexity": "medium",
+      "tools_needed": ["shell_exec", "code_exec"]
+    },
+    {
+      "id": "step_4",
+      "description": "Create the destination folder structure (YYYY/MM format) and move files",
+      "agent_role": "executor",
+      "depends_on": ["step_3"],
+      "complexity": "medium",
+      "tools_needed": ["shell_exec", "file_write"]
+    },
+    {
+      "id": "step_5",
+      "description": "Generate a markdown summary report showing how many files were organized and any errors",
+      "agent_role": "writer",
+      "depends_on": ["step_4"],
+      "complexity": "light",
+      "tools_needed": ["file_write"]
+    }
+  ],
+  "exported_at": "2024-01-01T00:00:00Z"
+}
