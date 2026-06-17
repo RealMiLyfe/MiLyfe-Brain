@@ -98,3 +98,51 @@ async def sse_endpoint() -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+
+# ─── Approval Endpoints ──────────────────────────────────────────────
+
+
+@router.post("/approve/{request_id}")
+async def approve_action(request_id: str):
+    """Approve a pending action request."""
+    from safety.approvals import approval_service
+
+    success = approval_service.approve(request_id)
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Approval request not found or already resolved")
+    return {"status": "approved", "request_id": request_id}
+
+
+@router.post("/deny/{request_id}")
+async def deny_action(request_id: str):
+    """Deny a pending action request."""
+    from safety.approvals import approval_service
+
+    success = approval_service.deny(request_id)
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Approval request not found or already resolved")
+    return {"status": "denied", "request_id": request_id}
+
+
+@router.get("/approvals/pending")
+async def list_pending_approvals():
+    """List all pending approval requests."""
+    from safety.approvals import approval_service
+
+    pending = approval_service.list_pending()
+    return [
+        {
+            "id": r.id,
+            "action_type": r.action_type,
+            "description": r.description,
+            "details": r.details,
+            "agent_id": r.agent_id,
+            "agent_role": r.agent_role,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in pending
+    ]

@@ -9,9 +9,10 @@ import { clsx } from "clsx";
 import { toast } from "sonner";
 
 const MODELS = [
-  { id: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { id: "gpt-4o", label: "GPT-4o" },
-  { id: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet" },
+  { id: "phi3:mini", label: "Phi-3 Mini" },
+  { id: "llama3.1:8b", label: "Llama 3.1 8B" },
+  { id: "qwen2.5:14b", label: "Qwen 2.5 14B" },
+  { id: "hermes3:latest", label: "Hermes 3" },
 ];
 
 export function ChatInterface() {
@@ -19,7 +20,7 @@ export function ChatInterface() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [model, setModel] = useState("gpt-4o");
+  const [model, setModel] = useState("llama3.1:8b");
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 

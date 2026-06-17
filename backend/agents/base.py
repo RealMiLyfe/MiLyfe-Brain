@@ -196,9 +196,32 @@ class BaseAgent(ABC):
         self.status = AgentStatus.THINKING
         self.last_active = time.time()
 
+        # Recall relevant context from vector memory (ChromaDB)
+        recall_context = ""
+        try:
+            from memory.vector_store import vector_store
+            if vector_store.is_available:
+                results = await vector_store.query(
+                    collection_name=f"agent_{self.role.value}",
+                    query_texts=[task[:500]],
+                    n_results=3,
+                )
+                if results and results[0].get("documents"):
+                    docs = results[0]["documents"]
+                    if docs:
+                        recall_context = "\n\n## Relevant Past Context\n" + "\n---\n".join(
+                            doc[:300] for doc in docs if doc
+                        )
+        except Exception as e:
+            logger.debug("Vector recall failed (non-fatal): %s", e)
+
         # Build initial messages
+        system_prompt = self._build_system_prompt()
+        if recall_context:
+            system_prompt += recall_context
+
         messages: List[Dict[str, str]] = [
-            {"role": "system", "content": self._build_system_prompt()},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": task},
         ]
 
@@ -258,6 +281,23 @@ class BaseAgent(ABC):
             final_response = f"Error during thinking: {str(e)}"
             logger.error("Agent %s think() error: %s", self.name, e, exc_info=True)
 
+        # Store result in vector memory for future recall
+        if final_response and self.status == AgentStatus.COMPLETED:
+            try:
+                from memory.vector_store import vector_store
+                if vector_store.is_available:
+                    await vector_store.add_documents(
+                        collection_name=f"agent_{self.role.value}",
+                        documents=[f"Task: {task[:200]}\nResult: {final_response[:500]}"],
+                        metadatas=[{
+                            "agent_id": self.id,
+                            "role": self.role.value,
+                            "timestamp": str(time.time()),
+                        }],
+                    )
+            except Exception as e:
+                logger.debug("Vector store save failed (non-fatal): %s", e)
+
         # Post completion to message bus
         await self._publish_status(final_response)
 
@@ -265,7 +305,7 @@ class BaseAgent(ABC):
         return final_response
 
     async def _call_llm(self, messages: List[Dict[str, str]]) -> str:
-        """Call Ollama /api/chat endpoint.
+        """Call Ollama /api/chat endpoint with circuit breaker protection.
 
         Args:
             messages: List of message dicts with 'role' and 'content'.
@@ -274,9 +314,21 @@ class BaseAgent(ABC):
             The assistant's response text.
 
         Raises:
-            httpx.HTTPStatusError: On non-2xx response.
-            httpx.TimeoutException: On timeout.
+            httpx.HTTPStatusError: On non-2xx response (after circuit allows).
+            httpx.TimeoutException: On timeout (after circuit allows).
+            RuntimeError: If circuit breaker is open (Ollama unavailable).
         """
+        # Check circuit breaker before attempting call
+        try:
+            from services.resilience import ollama_breaker
+            if not ollama_breaker.is_available:
+                raise RuntimeError(
+                    f"Ollama circuit breaker is OPEN for agent {self.name}. "
+                    f"Service appears down. Will retry after recovery timeout."
+                )
+        except ImportError:
+            pass
+
         payload = {
             "model": self.model,
             "messages": messages,
@@ -294,6 +346,30 @@ class BaseAgent(ABC):
             data = response.json()
             content = data.get("message", {}).get("content", "")
 
+            # Record success with circuit breaker
+            try:
+                from services.resilience import ollama_breaker
+                ollama_breaker.record_success()
+            except ImportError:
+                pass
+
+            # Track token usage if available
+            try:
+                prompt_tokens = data.get("prompt_eval_count", 0)
+                completion_tokens = data.get("eval_count", 0)
+                if prompt_tokens or completion_tokens:
+                    from services.token_tracker import track_usage
+                    await track_usage(
+                        agent_id=self.id,
+                        agent_role=self.role.value,
+                        model=self.model,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        playbook_id=self.context.get("playbook_id"),
+                    )
+            except Exception as tok_err:
+                logger.debug("Token tracking failed (non-fatal): %s", tok_err)
+
             if not content:
                 logger.warning("Empty response from LLM for agent %s", self.name)
                 return ""
@@ -302,6 +378,11 @@ class BaseAgent(ABC):
 
         except httpx.TimeoutException:
             logger.error("LLM timeout for agent %s (model=%s)", self.name, self.model)
+            try:
+                from services.resilience import ollama_breaker
+                ollama_breaker.record_failure()
+            except ImportError:
+                pass
             raise
         except httpx.HTTPStatusError as e:
             logger.error(
@@ -310,8 +391,19 @@ class BaseAgent(ABC):
                 e.response.status_code,
                 e.response.text[:200],
             )
+            try:
+                from services.resilience import ollama_breaker
+                ollama_breaker.record_failure()
+            except ImportError:
+                pass
             raise
         except Exception as e:
+            if "circuit breaker" not in str(e).lower():
+                try:
+                    from services.resilience import ollama_breaker
+                    ollama_breaker.record_failure()
+                except ImportError:
+                    pass
             logger.error("LLM call failed for agent %s: %s", self.name, e)
             raise
 

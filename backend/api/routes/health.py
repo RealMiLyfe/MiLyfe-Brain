@@ -13,7 +13,7 @@ router = APIRouter()
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request) -> HealthResponse:
-    """System health check with service connectivity status."""
+    """System health check with service connectivity and circuit breaker status."""
     start_time = getattr(request.app.state, "start_time", time.time())
     uptime = time.time() - start_time
 
@@ -39,8 +39,13 @@ async def health_check(request: Request) -> HealthResponse:
     except Exception:
         pass
 
+    # Determine overall status based on critical services
+    status = "healthy"
+    if not ollama_connected:
+        status = "degraded"
+
     return HealthResponse(
-        status="healthy",
+        status=status,
         version=settings.app_version,
         uptime_seconds=round(uptime, 1),
         ollama_connected=ollama_connected,
@@ -48,3 +53,19 @@ async def health_check(request: Request) -> HealthResponse:
         database_connected=True,
         models_available=models_available,
     )
+
+
+@router.get("/health/circuits")
+async def circuit_breaker_status():
+    """Get circuit breaker status for all external services."""
+    try:
+        from services.resilience import ollama_breaker, chromadb_breaker, redis_breaker
+        return {
+            "circuits": [
+                ollama_breaker.status(),
+                chromadb_breaker.status(),
+                redis_breaker.status(),
+            ]
+        }
+    except ImportError:
+        return {"circuits": [], "note": "Resilience module not available"}

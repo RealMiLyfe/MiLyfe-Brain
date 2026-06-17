@@ -1,19 +1,42 @@
 """MiLyfe Brain Tool System — exposes all tools and the central registry."""
 
-from backend.tools.registry import ToolRegistry, tool_registry
-from backend.tools.file_tools import file_read, file_write, file_delete, file_list
-from backend.tools.shell_tools import shell_exec
-from backend.tools.code_tools import code_exec
-from backend.tools.browser_tools import web_browse, web_search
-from backend.tools.search_tools import glob_search, grep_search
-from backend.tools.batch_tools import batch_execute
-from backend.tools.repl_tools import repl_execute, repl_inspect, repl_variables
-from backend.tools.scratchpad_tools import scratchpad_write, scratchpad_read, scratchpad_update
-from backend.tools.llm_client import llm_generate
+from tools.registry import ToolRegistry, tool_registry
+from tools.file_tools import file_read, file_write, file_delete, file_list
+from tools.shell_tools import shell_exec
+from tools.code_tools import code_exec
+from tools.browser_tools import web_browse, web_search
+from tools.search_tools import glob_search, grep_search
+from tools.batch_tools import batch_execute
+from tools.repl_tools import repl_execute, repl_inspect, repl_variables
+from tools.scratchpad_tools import scratchpad_write, scratchpad_read, scratchpad_update
+from tools.llm_client import llm_generate
 
 
 def register_all_tools() -> None:
-    """Register every built-in tool with the global tool registry."""
+    """Register every built-in tool with the global tool registry.
+
+    Also wires audit logging as a post-hook for all tool executions.
+    """
+    # Wire audit logging post-hook
+    async def _audit_post_hook(tool_name: str, data: dict) -> None:
+        """Log every tool execution to the audit trail."""
+        try:
+            from safety.logger import audit_logger
+            arguments = data.get("arguments", {})
+            result = data.get("result", "")
+            # Truncate long results for the log
+            result_preview = str(result)[:500] if result else ""
+            await audit_logger.log_action(
+                agent_id="system",
+                agent_role="tool_system",
+                action_type=tool_name,
+                description=f"Tool '{tool_name}' called with args: {arguments}",
+                result=result_preview,
+            )
+        except Exception:
+            pass  # Audit logging failure should never block tool execution
+
+    tool_registry.add_post_hook(_audit_post_hook)
 
     # ─── File Tools (free) ────────────────────────────────────────────
     tool_registry.register(
