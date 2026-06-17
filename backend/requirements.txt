@@ -42,7 +42,7 @@ PyPDF2==3.0.1
 structlog==24.4.0
 
 # Retry Logic
-tenacity==9.0.0
+tenacity==8.5.0
 
 # Git
 gitpython==3.1.43
