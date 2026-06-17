@@ -110,102 +110,38 @@ class BaseAgent(abc.ABC):
         max_rounds: int = 3,
         stream: bool = False,
     ) -> str:
-        """Execute the optimized think/act loop.
+        """Execute the TAOR (Think-Act-Observe-Repeat) loop.
+
+        Delegates to the TAOREngine which provides:
+        - Topic detection
+        - Layered prompt augmentation
+        - Context compaction
+        - Sub-agent dispatch
+        - Safety checks
 
         Args:
             task: The task description
             context: Additional context dict
-            max_rounds: Maximum tool-use rounds
+            max_rounds: Maximum TAOR iterations
             stream: If True, emit tokens as they arrive
 
         Returns:
             Final response text
         """
-        self.task = task
+        from agents.taor_engine import taor_engine
+        from models.schemas import OutputStyle
+
         context = context or {}
-        start_time = time.time()
+        output_style = OutputStyle(context.pop("output_style", "default"))
 
-        # 1. Recall relevant context (parallel: vector memory + long-term memory)
-        relevant_context, learned_context = await asyncio.gather(
-            self._recall_context(task),
-            self._recall_learned_patterns(task),
-            return_exceptions=True,
+        return await taor_engine.execute(
+            agent=self,
+            task=task,
+            context=context,
+            max_turns=max_rounds,
+            output_style=output_style,
+            stream=stream,
         )
-        if isinstance(relevant_context, Exception):
-            relevant_context = ""
-        if isinstance(learned_context, Exception):
-            learned_context = ""
-
-        # 2. Build enriched system prompt
-        system = self._build_enriched_system_prompt(
-            relevant_context=relevant_context if isinstance(relevant_context, str) else "",
-            learned_context=learned_context if isinstance(learned_context, str) else "",
-            extra_context=context,
-        )
-
-        # 3. Initialize message history
-        self._messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": task},
-        ]
-
-        self._emit_event(EventType.AGENT_SPAWNED, {
-            "task": task[:200],
-            "model": self.model,
-            "context_tokens": len(system) // 4,
-        })
-
-        # 4. Tool loop with streaming support
-        final_response = ""
-        for round_num in range(max_rounds):
-            # Check context window size, compact if needed
-            await self._maybe_compact_context()
-
-            # Call LLM (with circuit breaker + fallback)
-            response_text = await self._call_llm_safe(stream=stream)
-
-            if not response_text:
-                final_response = "No response generated. Model may be unavailable."
-                break
-
-            # Record thought
-            self._thoughts.append(response_text[:200])
-            self._emit_event(EventType.THOUGHT, {
-                "content": response_text[:500],
-                "round": round_num,
-                "tokens_so_far": self._total_tokens_used,
-            })
-
-            # Parse tool calls (supports multiple formats)
-            from agents.tool_parser import parse_tool_calls
-            tool_calls = parse_tool_calls(response_text)
-
-            if not tool_calls:
-                final_response = response_text
-                break
-
-            # Execute tools (parallel when possible)
-            tool_results = await self._execute_tools_optimized(tool_calls)
-
-            # Feed results back
-            tool_output = self._format_tool_results(tool_results)
-            self._messages.append({"role": "assistant", "content": response_text})
-            self._messages.append({"role": "user", "content": f"Tool results:\n{tool_output}"})
-
-            self._progress = (round_num + 1) / max_rounds
-
-        # 5. Post-completion tasks (parallel, non-blocking)
-        asyncio.create_task(self._post_completion(task, final_response, time.time() - start_time))
-
-        self._progress = 1.0
-        self._emit_event(EventType.COMPLETED, {
-            "response_length": len(final_response),
-            "rounds": len(self._thoughts),
-            "duration_s": round(time.time() - start_time, 2),
-            "total_tokens": self._total_tokens_used,
-        })
-
-        return final_response
 
     async def think_streaming(
         self,
