@@ -13,6 +13,7 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useStore } from "@/lib/store";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { ApprovalDialog } from "@/components/dashboard/ApprovalDialog";
 import { Brain } from "lucide-react";
 
 export default function Home() {
@@ -70,6 +71,9 @@ export default function Home() {
         <main className="flex-1 overflow-auto p-6 scrollbar-thin">
           {renderContent()}
         </main>
+
+        {/* Approval Dialog (floating) */}
+        <ApprovalDialog />
       </div>
     </div>
   );
