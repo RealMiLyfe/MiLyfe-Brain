@@ -1,0 +1,110 @@
+version: "3.9"
+
+services:
+  # ─── ChromaDB Vector Store ─────────────────────────────────────────
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: milyfe-chromadb
+    ports:
+      - "8400:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - milyfe-network
+
+  # ─── Redis Cache & Pub/Sub ─────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: milyfe-redis
+    ports:
+      - "6479:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - milyfe-network
+
+  # ─── Backend (FastAPI) ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: milyfe-backend
+    ports:
+      - "8200:8200"
+    volumes:
+      - workspace_data:/workspace
+      - db_data:/data
+    env_file:
+      - .env
+    environment:
+      - CHROMADB_URL=http://chromadb:8000
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=sqlite+aiosqlite:////data/milyfe.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - milyfe-network
+
+  # ─── Frontend (Next.js) ────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: milyfe-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8200
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - milyfe-network
+
+# ─── Volumes ───────────────────────────────────────────────────────────
+volumes:
+  chroma_data:
+    driver: local
+  redis_data:
+    driver: local
+  workspace_data:
+    driver: local
+  db_data:
+    driver: local
+
+# ─── Networks ──────────────────────────────────────────────────────────
+networks:
+  milyfe-network:
+    driver: bridge
