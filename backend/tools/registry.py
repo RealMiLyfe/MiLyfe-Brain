@@ -169,6 +169,7 @@ def _register_all_tools():
     from tools.batch_tools import register_batch_tools
     from tools.repl_tools import register_repl_tools
     from tools.scratchpad_tools import register_scratchpad_tools
+    from tools.dynamic_tools import register_dynamic_tool_tools
 
     register_file_tools(tool_registry)
     register_shell_tools(tool_registry)
@@ -179,6 +180,7 @@ def _register_all_tools():
     register_batch_tools(tool_registry)
     register_repl_tools(tool_registry)
     register_scratchpad_tools(tool_registry)
+    register_dynamic_tool_tools(tool_registry)
 
 
 _register_all_tools()
