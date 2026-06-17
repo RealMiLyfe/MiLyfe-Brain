@@ -182,99 +182,110 @@ class Orchestrator:
         """Execute a single playbook step using an agent.
 
         Spawns the appropriate agent, calls think(), handles retry on failure.
+        Uses its own DB session to avoid asyncio.gather session sharing issues.
 
         Returns:
             The agent's result string.
         """
         factory = get_agent_factory()
 
-        # Mark step as running
-        step.status = "running"
-        step.started_at = datetime.utcnow()
-        await db.commit()
+        # Use a dedicated session for this step to avoid concurrent session issues
+        async with async_session_factory() as step_db:
+            from sqlalchemy import select as sa_select
 
-        await self._emit_event(
-            "step_started",
-            playbook_id=playbook_id,
-            step_id=step.id,
-            description=step.description,
-        )
+            # Re-load the step in our own session
+            step_result = await step_db.execute(
+                sa_select(PlaybookStepModel).where(PlaybookStepModel.id == step.id)
+            )
+            local_step = step_result.scalar_one()
 
-        role = step.agent_role or "coder"
-
-        try:
-            agent = factory.spawn(role=role, context={"playbook_id": playbook_id})
-            result = await agent.think(step.description)
-
-            # Mark completed
-            step.status = "completed"
-            step.result = result
-            step.completed_at = datetime.utcnow()
-            await db.commit()
-
-            # Retire agent
-            await factory.retire(agent.id)
+            # Mark step as running
+            local_step.status = "running"
+            local_step.started_at = datetime.utcnow()
+            await step_db.commit()
 
             await self._emit_event(
-                "step_completed",
+                "step_started",
                 playbook_id=playbook_id,
-                step_id=step.id,
-                result_preview=result[:200] if result else "",
+                step_id=local_step.id,
+                description=local_step.description,
             )
 
-            return result
+            role = local_step.agent_role or "coder"
 
-        except Exception as e:
-            logger.warning("Step %s failed, attempting debugger retry: %s", step.id, e)
-
-            # Retry with DebuggerAgent (max 1 retry)
             try:
-                debugger = factory.spawn(
-                    role="debugger",
-                    context={
-                        "playbook_id": playbook_id,
-                        "original_error": str(e),
-                        "original_role": role,
-                    },
-                )
-                retry_task = (
-                    f"The previous agent ({role}) failed with error: {e}\n\n"
-                    f"Original task: {step.description}\n\n"
-                    f"Please debug and complete the task."
-                )
-                result = await debugger.think(retry_task)
+                agent = factory.spawn(role=role, context={"playbook_id": playbook_id})
+                result = await agent.think(local_step.description)
 
-                step.status = "completed"
-                step.result = f"[Retry by debugger] {result}"
-                step.completed_at = datetime.utcnow()
-                await db.commit()
+                # Mark completed
+                local_step.status = "completed"
+                local_step.result = result
+                local_step.completed_at = datetime.utcnow()
+                await step_db.commit()
 
-                await factory.retire(debugger.id)
+                # Retire agent
+                await factory.retire(agent.id)
 
                 await self._emit_event(
                     "step_completed",
                     playbook_id=playbook_id,
-                    step_id=step.id,
+                    step_id=local_step.id,
                     result_preview=result[:200] if result else "",
-                    retried=True,
                 )
 
                 return result
 
-            except Exception as retry_error:
-                step.status = "failed"
-                step.result = f"Failed after retry: {retry_error}"
-                step.completed_at = datetime.utcnow()
-                await db.commit()
+            except Exception as e:
+                logger.warning("Step %s failed, attempting debugger retry: %s", local_step.id, e)
 
-                await self._emit_event(
-                    "step_failed",
-                    playbook_id=playbook_id,
-                    step_id=step.id,
-                    error=str(retry_error),
-                )
+                # Retry with DebuggerAgent (max 1 retry)
+                try:
+                    debugger = factory.spawn(
+                        role="debugger",
+                        context={
+                            "playbook_id": playbook_id,
+                            "original_error": str(e),
+                            "original_role": role,
+                        },
+                    )
+                    retry_task = (
+                        f"The previous agent ({role}) failed with error: {e}\n\n"
+                        f"Original task: {local_step.description}\n\n"
+                        f"Please debug and complete the task."
+                    )
+                    result = await debugger.think(retry_task)
 
-                raise retry_error
+                    local_step.status = "completed"
+                    local_step.result = f"[Retry by debugger] {result}"
+                    local_step.completed_at = datetime.utcnow()
+                    await step_db.commit()
+
+                    await factory.retire(debugger.id)
+
+                    await self._emit_event(
+                        "step_completed",
+                        playbook_id=playbook_id,
+                        step_id=local_step.id,
+                        result_preview=result[:200] if result else "",
+                        retried=True,
+                    )
+
+                    return result
+
+                except Exception as retry_error:
+                    local_step.status = "failed"
+                    local_step.result = f"Failed after retry: {retry_error}"
+                    local_step.completed_at = datetime.utcnow()
+                    await step_db.commit()
+
+                    await self._emit_event(
+                        "step_failed",
+                        playbook_id=playbook_id,
+                        step_id=local_step.id,
+                        error=str(retry_error),
+                    )
+
+                    raise retry_error
 
     async def _emit_event(self, event_type: str, **data) -> None:
         """Emit a stream event via the message bus."""
