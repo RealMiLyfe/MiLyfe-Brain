@@ -1,0 +1,13 @@
+# AMD ROCm GPU override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+
+services:
+  backend:
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-10.3.0}
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
