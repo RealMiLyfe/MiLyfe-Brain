@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: milyfe-config
+  namespace: milyfe
+data:
+  CHROMA_PORT: "8000"
+  REDIS_PORT: "6379"
+  BACKEND_PORT: "8200"
+  FRONTEND_PORT: "3000"
+  DEFAULT_LIGHT_MODEL: "phi3:mini"
+  DEFAULT_HEAVY_MODEL: "llama3.1:8b"
+  MAX_AGENTS: "10"
+  REQUIRE_APPROVAL_DESTRUCTIVE: "true"
+  REQUIRE_APPROVAL_BROWSING: "true"
+  REQUIRE_APPROVAL_GUI: "true"
+  AUTO_GIT_SNAPSHOTS: "true"
+  CONTEXT_SUMMARIZE_THRESHOLD: "32000"
+  MAX_RETRIES: "3"
+  AGENT_TIMEOUT: "300"
+  WORKSPACE_DIR: "/workspace"
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: "milyfe-brain-backend"
+  SENTRY_ENABLED: "false"

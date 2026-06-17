@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milyfe-chromadb
+  namespace: milyfe
+  labels:
+    app: milyfe-chromadb
+    app.kubernetes.io/name: chromadb
+    app.kubernetes.io/component: vectordb
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: milyfe-chromadb
+  template:
+    metadata:
+      labels:
+        app: milyfe-chromadb
+        app.kubernetes.io/name: chromadb
+    spec:
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: chromadb
+          image: chromadb/chroma:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: IS_PERSISTENT
+              value: "TRUE"
+            - name: PERSIST_DIRECTORY
+              value: "/chroma/chroma"
+            - name: ANONYMIZED_TELEMETRY
+              value: "FALSE"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: chroma-data
+              mountPath: /chroma/chroma
+          livenessProbe:
+            httpGet:
+              path: /api/v1/heartbeat
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/v1/heartbeat
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: chroma-data
+          persistentVolumeClaim:
+            claimName: chromadb-pvc

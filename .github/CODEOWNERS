@@ -1,0 +1,50 @@
+# MiLyfe Brain - Code Ownership
+# Each line is a file pattern followed by one or more owners.
+# Order matters — later rules take precedence.
+
+# Default owners for everything
+* @RealMiLyfe/core-team
+
+# Backend ownership
+/backend/ @RealMiLyfe/backend-team
+/backend/agents/ @RealMiLyfe/ai-team
+/backend/safety/ @RealMiLyfe/security-team
+/backend/tools/ @RealMiLyfe/ai-team
+/backend/services/ @RealMiLyfe/backend-team
+/backend/api/ @RealMiLyfe/backend-team
+/backend/memory/ @RealMiLyfe/ai-team
+/backend/mcp/ @RealMiLyfe/ai-team
+/backend/plugins/ @RealMiLyfe/ai-team
+
+# Frontend ownership
+/frontend/ @RealMiLyfe/frontend-team
+/frontend/src/components/ @RealMiLyfe/frontend-team
+/frontend/src/lib/ @RealMiLyfe/frontend-team
+
+# Infrastructure
+/terraform/ @RealMiLyfe/infra-team
+/k8s/ @RealMiLyfe/infra-team
+/docker-compose*.yml @RealMiLyfe/infra-team
+/.github/workflows/ @RealMiLyfe/infra-team
+
+# Security-sensitive files
+/backend/safety/ @RealMiLyfe/security-team
+/.github/workflows/security-scan.yml @RealMiLyfe/security-team
+/backend/config.py @RealMiLyfe/security-team @RealMiLyfe/backend-team
+
+# Documentation
+/docs/ @RealMiLyfe/docs-team
+/README.md @RealMiLyfe/core-team
+/FULL_SPEC.md @RealMiLyfe/core-team
+
+# Database & migrations
+/backend/memory/database.py @RealMiLyfe/backend-team @RealMiLyfe/dba-team
+/backend/alembic/ @RealMiLyfe/backend-team @RealMiLyfe/dba-team
+
+# Client SDKs
+/sdks/ @RealMiLyfe/sdk-team
+
+# Tests
+/backend/tests/ @RealMiLyfe/qa-team
+/tests/ @RealMiLyfe/qa-team
+/frontend/src/**/*.test.* @RealMiLyfe/qa-team

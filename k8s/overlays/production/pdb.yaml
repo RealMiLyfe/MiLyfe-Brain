@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: milyfe-backend-pdb
+  namespace: milyfe-production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: milyfe-backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: milyfe-frontend-pdb
+  namespace: milyfe-production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: milyfe-frontend

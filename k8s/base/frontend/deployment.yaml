@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milyfe-frontend
+  namespace: milyfe
+  labels:
+    app: milyfe-frontend
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/component: ui
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: milyfe-frontend
+  template:
+    metadata:
+      labels:
+        app: milyfe-frontend
+        app.kubernetes.io/name: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: frontend
+          image: frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "/api"
+            - name: NEXT_PUBLIC_WS_URL
+              value: ""
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+      terminationGracePeriodSeconds: 15

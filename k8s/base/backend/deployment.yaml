@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milyfe-backend
+  namespace: milyfe
+  labels:
+    app: milyfe-backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: milyfe-backend
+  template:
+    metadata:
+      labels:
+        app: milyfe-backend
+        app.kubernetes.io/name: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8200"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: milyfe-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: backend
+          image: backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8200
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: milyfe-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: milyfe-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: milyfe-secrets
+                  key: REDIS_URL
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: milyfe-secrets
+                  key: API_KEY
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: milyfe-secrets
+                  key: SENTRY_DSN
+                  optional: true
+            - name: OLLAMA_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: milyfe-config
+                  key: OLLAMA_BASE_URL
+                  optional: true
+            - name: CHROMADB_URL
+              value: "http://milyfe-chromadb:8000"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8200
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8200
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8200
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          volumeMounts:
+            - name: workspace-data
+              mountPath: /workspace
+            - name: db-data
+              mountPath: /data
+      volumes:
+        - name: workspace-data
+          persistentVolumeClaim:
+            claimName: workspace-pvc
+        - name: db-data
+          persistentVolumeClaim:
+            claimName: db-pvc
+      terminationGracePeriodSeconds: 30

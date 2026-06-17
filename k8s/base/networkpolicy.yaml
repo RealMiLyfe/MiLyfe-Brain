@@ -1,0 +1,122 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-policy
+  namespace: milyfe
+spec:
+  podSelector:
+    matchLabels:
+      app: milyfe-backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: milyfe-frontend
+      ports:
+        - port: 8200
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8200
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: milyfe-chromadb
+      ports:
+        - port: 8000
+    - to:
+        - podSelector:
+            matchLabels:
+              app: milyfe-redis
+      ports:
+        - port: 6379
+    - to:  # Allow DNS
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:  # Allow external (Ollama, S3, etc.)
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-policy
+  namespace: milyfe
+spec:
+  podSelector:
+    matchLabels:
+      app: milyfe-frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 3000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: milyfe-backend
+      ports:
+        - port: 8200
+    - to:  # DNS
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chromadb-policy
+  namespace: milyfe
+spec:
+  podSelector:
+    matchLabels:
+      app: milyfe-chromadb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: milyfe-backend
+      ports:
+        - port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-policy
+  namespace: milyfe
+spec:
+  podSelector:
+    matchLabels:
+      app: milyfe-redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: milyfe-backend
+      ports:
+        - port: 6379
