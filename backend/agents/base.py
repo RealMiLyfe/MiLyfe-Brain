@@ -1,12 +1,13 @@
-"""MiLyfe Brain — BaseAgent ABC (think/act loop, httpx → Ollama)."""
+"""MiLyfe Brain — BaseAgent ABC (optimized think/act loop with streaming, pooling, smart context)."""
 
 from __future__ import annotations
 
 import abc
+import asyncio
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
 import structlog
@@ -23,18 +24,33 @@ from models.schemas import (
 
 logger = structlog.get_logger()
 
+# ─── Shared Connection Pool (reuse across all agents) ─────────
+_http_pool: Optional[httpx.AsyncClient] = None
+
+
+async def get_http_pool() -> httpx.AsyncClient:
+    """Get or create the shared connection pool."""
+    global _http_pool
+    if _http_pool is None or _http_pool.is_closed:
+        _http_pool = httpx.AsyncClient(
+            timeout=httpx.Timeout(settings.agent_timeout, connect=10.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+    return _http_pool
+
 
 class BaseAgent(abc.ABC):
     """Abstract base class for all MiLyfe Brain agents.
 
-    Implements the think/act loop:
-    1. Build system prompt (role + rules + skills + style + env)
-    2. Call Ollama /api/chat via httpx
-    3. Parse response for tool calls
-    4. Execute tools (with hooks)
-    5. Feed results back, repeat up to max_rounds
-    6. Store results in vector memory
-    7. Post to message bus
+    Optimized think/act loop with:
+    - Connection pooling (shared httpx client)
+    - Token-by-token streaming support
+    - Smart context injection (rules, skills, env, scratchpad)
+    - Context window management (auto-compaction)
+    - Circuit breaker integration
+    - Model fallback chain
+    - Parallel tool execution
+    - Learning from corrections
     """
 
     def __init__(
@@ -43,6 +59,7 @@ class BaseAgent(abc.ABC):
         agent_id: Optional[str] = None,
         model: Optional[str] = None,
         task: str = "",
+        playbook_id: Optional[str] = None,
     ):
         self.id = agent_id or str(uuid.uuid4())
         self.role = role
@@ -50,12 +67,16 @@ class BaseAgent(abc.ABC):
         self.task = task
         self.name = self._role_name()
         self.avatar_color = self._avatar_color()
+        self.playbook_id = playbook_id
 
         self._messages: List[Dict[str, str]] = []
         self._thoughts: List[str] = []
         self._actions_taken: int = 0
         self._progress: float = 0.0
         self._spawned_at = datetime.utcnow()
+        self._total_tokens_used: int = 0
+        self._total_duration_ms: float = 0.0
+        self._corrections: List[str] = []  # User corrections for learning
 
     # ─── Abstract Methods ───────────────────────────────────────
 
@@ -74,7 +95,7 @@ class BaseAgent(abc.ABC):
             name=self.name,
             status="working" if self._messages else "idle",
             current_task=self.task,
-            thoughts=self._thoughts[-5:],  # Last 5 thoughts
+            thoughts=self._thoughts[-5:],
             actions_taken=self._actions_taken,
             progress=self._progress,
             model=self.model,
@@ -87,189 +108,334 @@ class BaseAgent(abc.ABC):
         task: str,
         context: Optional[Dict[str, Any]] = None,
         max_rounds: int = 3,
+        stream: bool = False,
     ) -> str:
-        """Execute the think/act loop for a task.
+        """Execute the optimized think/act loop.
 
-        Returns the final response text.
+        Args:
+            task: The task description
+            context: Additional context dict
+            max_rounds: Maximum tool-use rounds
+            stream: If True, emit tokens as they arrive
+
+        Returns:
+            Final response text
         """
         self.task = task
         context = context or {}
         start_time = time.time()
 
-        # 1. Recall relevant docs from vector memory
-        relevant_context = await self._recall_context(task)
+        # 1. Recall relevant context (parallel: vector memory + long-term memory)
+        relevant_context, learned_context = await asyncio.gather(
+            self._recall_context(task),
+            self._recall_learned_patterns(task),
+            return_exceptions=True,
+        )
+        if isinstance(relevant_context, Exception):
+            relevant_context = ""
+        if isinstance(learned_context, Exception):
+            learned_context = ""
 
-        # 2. Build system prompt
-        system = self._build_full_system_prompt(relevant_context, context)
+        # 2. Build enriched system prompt
+        system = self._build_enriched_system_prompt(
+            relevant_context=relevant_context if isinstance(relevant_context, str) else "",
+            learned_context=learned_context if isinstance(learned_context, str) else "",
+            extra_context=context,
+        )
 
-        # 3. Initialize message history for this task
+        # 3. Initialize message history
         self._messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": task},
         ]
 
-        # Emit spawned event
-        self._emit_event(EventType.AGENT_SPAWNED, {"task": task[:200]})
+        self._emit_event(EventType.AGENT_SPAWNED, {
+            "task": task[:200],
+            "model": self.model,
+            "context_tokens": len(system) // 4,
+        })
 
-        # 4-7. Tool loop
+        # 4. Tool loop with streaming support
         final_response = ""
         for round_num in range(max_rounds):
-            # Call Ollama
-            response_text = await self._call_llm()
+            # Check context window size, compact if needed
+            await self._maybe_compact_context()
+
+            # Call LLM (with circuit breaker + fallback)
+            response_text = await self._call_llm_safe(stream=stream)
 
             if not response_text:
-                final_response = "No response generated."
+                final_response = "No response generated. Model may be unavailable."
                 break
 
             # Record thought
             self._thoughts.append(response_text[:200])
-            self._emit_event(EventType.THOUGHT, {"content": response_text[:500], "round": round_num})
+            self._emit_event(EventType.THOUGHT, {
+                "content": response_text[:500],
+                "round": round_num,
+                "tokens_so_far": self._total_tokens_used,
+            })
 
-            # Parse tool calls
+            # Parse tool calls (supports multiple formats)
             from agents.tool_parser import parse_tool_calls
             tool_calls = parse_tool_calls(response_text)
 
             if not tool_calls:
-                # No tool calls — this is the final response
                 final_response = response_text
                 break
 
-            # Execute tools
-            tool_results = await self._execute_tools(tool_calls)
+            # Execute tools (parallel when possible)
+            tool_results = await self._execute_tools_optimized(tool_calls)
 
-            # Feed results back to LLM
+            # Feed results back
             tool_output = self._format_tool_results(tool_results)
             self._messages.append({"role": "assistant", "content": response_text})
             self._messages.append({"role": "user", "content": f"Tool results:\n{tool_output}"})
 
             self._progress = (round_num + 1) / max_rounds
 
-        # 8. Store result in vector memory
-        await self._store_memory(task, final_response)
-
-        # 9. Post to message bus
-        await self._post_to_bus(task, final_response)
-
-        self._emit_event(EventType.COMPLETED, {
-            "response_length": len(final_response),
-            "rounds": min(max_rounds, len(self._thoughts)),
-            "duration_s": round(time.time() - start_time, 2),
-        })
+        # 5. Post-completion tasks (parallel, non-blocking)
+        asyncio.create_task(self._post_completion(task, final_response, time.time() - start_time))
 
         self._progress = 1.0
+        self._emit_event(EventType.COMPLETED, {
+            "response_length": len(final_response),
+            "rounds": len(self._thoughts),
+            "duration_s": round(time.time() - start_time, 2),
+            "total_tokens": self._total_tokens_used,
+        })
+
         return final_response
 
-    # ─── LLM Interaction ────────────────────────────────────────
+    async def think_streaming(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream response tokens as they arrive from Ollama."""
+        self.task = task
+        context = context or {}
 
-    async def _call_llm(self) -> str:
-        """Call Ollama /api/chat via httpx (pure, no langchain)."""
+        # Build prompt (simplified for streaming - single turn)
+        system = self._build_enriched_system_prompt(extra_context=context)
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": task},
+        ]
+
+        client = await get_http_pool()
         try:
-            async with httpx.AsyncClient(timeout=settings.agent_timeout) as client:
-                resp = await client.post(
-                    f"{settings.ollama_base_url}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": self._messages,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": 4096,
-                        },
-                    },
-                )
-
-                if resp.status_code != 200:
-                    logger.error("llm_call_failed", status=resp.status_code, body=resp.text[:200])
-                    return ""
-
-                data = resp.json()
-                content = data.get("message", {}).get("content", "")
-
-                # Track tokens
-                await self._track_tokens(data)
-
-                return content
-
-        except httpx.TimeoutException:
-            logger.error("llm_timeout", model=self.model, agent_id=self.id)
-            return ""
+            async with client.stream(
+                "POST",
+                f"{settings.ollama_base_url}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": True,
+                    "options": {"temperature": 0.7, "num_predict": 4096},
+                },
+            ) as response:
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    import orjson
+                    try:
+                        data = orjson.loads(line)
+                        token = data.get("message", {}).get("content", "")
+                        if token:
+                            yield token
+                            # Emit token event for WebSocket
+                            self._emit_event(EventType.THOUGHT, {"token": token, "streaming": True})
+                    except Exception:
+                        continue
         except Exception as e:
-            logger.error("llm_error", error=str(e), model=self.model)
+            yield f"\n[Error: {e}]"
+
+    def record_correction(self, correction: str):
+        """Record a user correction for learning."""
+        self._corrections.append(correction)
+
+    # ─── LLM Interaction (Optimized) ────────────────────────────
+
+    async def _call_llm_safe(self, stream: bool = False) -> str:
+        """Call LLM with circuit breaker and model fallback."""
+        try:
+            from services.circuit_breaker import breakers
+            breaker = breakers.get("ollama")
+
+            if breaker:
+                return await breaker.call(self._call_llm_pooled)
+            return await self._call_llm_pooled()
+
+        except Exception as e:
+            # Try fallback chain
+            logger.warning("llm_primary_failed", model=self.model, error=str(e))
+            return await self._call_llm_fallback()
+
+    async def _call_llm_pooled(self) -> str:
+        """Call Ollama using shared connection pool."""
+        client = await get_http_pool()
+
+        resp = await client.post(
+            f"{settings.ollama_base_url}/api/chat",
+            json={
+                "model": self.model,
+                "messages": self._messages,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "num_predict": 4096,
+                    "num_ctx": 8192,
+                },
+            },
+        )
+
+        if resp.status_code != 200:
+            raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text[:200]}")
+
+        data = resp.json()
+        content = data.get("message", {}).get("content", "")
+
+        # Track tokens
+        prompt_tokens = data.get("prompt_eval_count", 0)
+        completion_tokens = data.get("eval_count", 0)
+        self._total_tokens_used += prompt_tokens + completion_tokens
+        self._total_duration_ms += data.get("total_duration", 0) / 1_000_000
+
+        # Async token tracking (don't wait)
+        asyncio.create_task(self._track_tokens_async(data))
+
+        return content
+
+    async def _call_llm_fallback(self) -> str:
+        """Try fallback models when primary fails."""
+        try:
+            from services.model_fallback import model_fallback
+            result = await model_fallback.call_with_fallback(
+                messages=self._messages,
+                preferred_model=self.model,
+            )
+            return result.get("content", "")
+        except Exception as e:
+            logger.error("all_models_failed", error=str(e))
             return ""
 
-    # ─── Tool Execution ─────────────────────────────────────────
+    # ─── Tool Execution (Optimized) ────────────────────────────
 
-    async def _execute_tools(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
-        """Execute tool calls with pre/post hooks."""
-        results = []
+    async def _execute_tools_optimized(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
+        """Execute tools with parallel execution for independent calls."""
+        if len(tool_calls) == 1:
+            return [await self._execute_single_tool(tool_calls[0])]
+
+        # Check if tools can run in parallel (no file conflicts)
+        if self._can_parallelize(tool_calls):
+            tasks = [self._execute_single_tool(tc) for tc in tool_calls]
+            return await asyncio.gather(*tasks)
+        else:
+            # Sequential execution for dependent tools
+            results = []
+            for tc in tool_calls:
+                results.append(await self._execute_single_tool(tc))
+            return results
+
+    async def _execute_single_tool(self, tc: ToolCall) -> ToolResult:
+        """Execute a single tool with hooks."""
+        self._actions_taken += 1
+        self._emit_event(EventType.TOOL_CALL, {"tool": tc.tool_name, "args": tc.arguments})
+
+        try:
+            from hooks.registry import hook_registry
+            tc = await hook_registry.run_pre_hooks(tc, self)
+
+            from tools.registry import tool_registry
+            result = await tool_registry.execute(tc.tool_name, tc.arguments, agent=self)
+
+            result = await hook_registry.run_post_hooks(result, self)
+
+            self._emit_event(EventType.TOOL_RESULT, {
+                "tool": tc.tool_name,
+                "success": result.success,
+                "output_preview": result.output[:200] if result.output else "",
+                "execution_time_ms": result.execution_time_ms,
+            })
+            return result
+
+        except Exception as e:
+            return ToolResult(tool_name=tc.tool_name, success=False, error=str(e))
+
+    def _can_parallelize(self, tool_calls: List[ToolCall]) -> bool:
+        """Check if tool calls can safely run in parallel."""
+        write_tools = {"file_write", "file_delete", "shell_exec"}
+        paths_written = set()
+
         for tc in tool_calls:
-            self._actions_taken += 1
-            self._emit_event(EventType.TOOL_CALL, {"tool": tc.tool_name, "args": tc.arguments})
+            if tc.tool_name in write_tools:
+                path = tc.arguments.get("path", tc.arguments.get("command", ""))
+                if path in paths_written:
+                    return False  # Conflict
+                paths_written.add(path)
 
-            try:
-                # Pre-hooks
-                from hooks.registry import hook_registry
-                tc = await hook_registry.run_pre_hooks(tc, self)
+        return True
 
-                # Execute
-                from tools.registry import tool_registry
-                result = await tool_registry.execute(tc.tool_name, tc.arguments, agent=self)
+    # ─── Context Management ─────────────────────────────────────
 
-                # Post-hooks
-                result = await hook_registry.run_post_hooks(result, self)
+    async def _maybe_compact_context(self):
+        """Compact context if approaching token limits."""
+        try:
+            from services.context_manager import context_manager
+            if context_manager.needs_compaction(self._messages):
+                self._messages = await context_manager.compact(self._messages)
+                logger.debug("context_compacted", agent_id=self.id)
+        except Exception:
+            pass
 
-                results.append(result)
-                self._emit_event(EventType.TOOL_RESULT, {
-                    "tool": tc.tool_name,
-                    "success": result.success,
-                    "output_preview": result.output[:200] if result.output else "",
-                })
-
-            except Exception as e:
-                results.append(ToolResult(
-                    tool_name=tc.tool_name,
-                    success=False,
-                    error=str(e),
-                ))
-                logger.error("tool_execution_failed", tool=tc.tool_name, error=str(e))
-
-        return results
-
-    # ─── Memory ─────────────────────────────────────────────────
+    # ─── Memory (Optimized) ─────────────────────────────────────
 
     async def _recall_context(self, query: str) -> str:
-        """Recall relevant documents from ChromaDB."""
+        """Recall relevant documents from ChromaDB (with timeout)."""
         try:
             from memory.vector_store import vector_store
-            results = await vector_store.query(
-                collection="agent_memory",
-                query_text=query,
-                n_results=3,
+            results = await asyncio.wait_for(
+                vector_store.query(collection="agent_memory", query_text=query, n_results=3),
+                timeout=5.0,
             )
             if results:
-                return "\n---\nRelevant context:\n" + "\n".join(
-                    r.get("document", "") for r in results
+                return "\n---\nRelevant memory:\n" + "\n".join(
+                    r.get("document", "")[:300] for r in results if r.get("document")
+                )
+        except (asyncio.TimeoutError, Exception):
+            pass
+        return ""
+
+    async def _recall_learned_patterns(self, query: str) -> str:
+        """Recall learned patterns from skill library."""
+        try:
+            from services.skill_library import skill_library
+            skills = await skill_library.find_similar_skills(query, limit=2)
+            if skills:
+                return "\n---\nRelevant learned patterns:\n" + "\n".join(
+                    f"- {s['name']}: {s['description']}" for s in skills
                 )
         except Exception:
             pass
         return ""
 
-    async def _store_memory(self, task: str, result: str):
-        """Store result in vector memory for future recall."""
+    async def _post_completion(self, task: str, result: str, duration: float):
+        """Post-completion tasks (run async, don't block response)."""
         try:
+            # Store in vector memory
             from memory.vector_store import vector_store
             await vector_store.add_documents(
                 collection="agent_memory",
-                documents=[f"Task: {task}\nResult: {result[:500]}"],
-                metadatas=[{"agent_id": self.id, "role": self.role.value}],
+                documents=[f"Task: {task[:200]}\nResult: {result[:300]}"],
+                metadatas=[{"agent_id": self.id, "role": self.role.value, "duration": duration}],
                 ids=[f"mem_{self.id}_{uuid.uuid4().hex[:8]}"],
             )
         except Exception:
-            pass  # Non-critical
+            pass
 
-    async def _post_to_bus(self, task: str, result: str):
-        """Post result to inter-agent message bus."""
         try:
+            # Post to message bus
             from agents.message_bus import message_bus
             await message_bus.publish(
                 topic=f"agent.{self.role.value}.completed",
@@ -277,51 +443,116 @@ class BaseAgent(abc.ABC):
                     "agent_id": self.id,
                     "role": self.role.value,
                     "task": task[:200],
-                    "result": result[:500],
+                    "result": result[:300],
+                    "duration_s": round(duration, 2),
+                    "tokens": self._total_tokens_used,
                 },
             )
         except Exception:
             pass
 
-    # ─── Token Tracking ─────────────────────────────────────────
-
-    async def _track_tokens(self, response_data: dict):
-        """Track token usage."""
+    async def _track_tokens_async(self, response_data: dict):
+        """Track token usage (async, non-blocking)."""
         try:
-            prompt_tokens = response_data.get("prompt_eval_count", 0)
-            completion_tokens = response_data.get("eval_count", 0)
-
             from services.token_tracker import token_tracker
             await token_tracker.record(
                 agent_id=self.id,
                 agent_role=self.role.value,
                 model=self.model,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
+                prompt_tokens=response_data.get("prompt_eval_count", 0),
+                completion_tokens=response_data.get("eval_count", 0),
+                playbook_id=self.playbook_id,
             )
         except Exception:
             pass
 
-    # ─── Helpers ────────────────────────────────────────────────
+    # ─── Enriched System Prompt ─────────────────────────────────
 
-    def _build_full_system_prompt(self, relevant_context: str, extra_context: Dict[str, Any]) -> str:
-        """Build the full system prompt with all augmentations."""
+    def _build_enriched_system_prompt(
+        self,
+        relevant_context: str = "",
+        learned_context: str = "",
+        extra_context: Dict[str, Any] = None,
+    ) -> str:
+        """Build the fully-enriched system prompt with all augmentations."""
         parts = [self.system_prompt()]
 
-        # Add role-specific instructions
-        parts.append(f"\nYou are '{self.name}' (role: {self.role.value}).")
-        parts.append("You have access to tools. Use them when needed.")
-        parts.append("Format tool calls as JSON: {\"tool\": \"name\", \"args\": {...}}")
+        # Identity
+        parts.append(f"\nYou are '{self.name}' (role: {self.role.value}), part of MiLyfe Brain agent swarm.")
 
-        # Add relevant context from memory
+        # Tool instructions
+        parts.append(
+            "You have access to tools. To use a tool, output JSON:\n"
+            '{"tool": "tool_name", "args": {"param": "value"}}\n'
+            "You can call multiple tools per response. After tool results, continue reasoning."
+        )
+
+        # Available tools list
+        try:
+            from tools.registry import tool_registry
+            parts.append(tool_registry.list_tools_for_prompt())
+        except Exception:
+            pass
+
+        # Rules (hierarchical .rules files)
+        try:
+            from prompts.rule_loader import rule_loader
+            rules = rule_loader.get_rules_for_prompt(role=self.role.value)
+            if rules:
+                parts.append(rules)
+        except Exception:
+            pass
+
+        # Semantic skills (auto-activated by input)
+        try:
+            from services.semantic_skills import semantic_skills
+            task_text = extra_context.get("task", self.task) if extra_context else self.task
+            active = semantic_skills.get_active_skills(task_text)
+            if active:
+                instructions = semantic_skills.get_skill_instructions(active)
+                if instructions:
+                    parts.append(f"\n[Active Skills]\n{instructions}")
+        except Exception:
+            pass
+
+        # Environment snapshot
+        try:
+            from services.env_snapshot import env_snapshot
+            env_ctx = env_snapshot.get_for_prompt()
+            if env_ctx:
+                parts.append(env_ctx)
+        except Exception:
+            pass
+
+        # Scratchpad (short-term working memory)
+        try:
+            from tools.scratchpad_tools import get_scratchpad_context
+            session_id = extra_context.get("session_id", "default") if extra_context else "default"
+            scratch = get_scratchpad_context(session_id)
+            if scratch:
+                parts.append(scratch)
+        except Exception:
+            pass
+
+        # Learned corrections (if any)
+        if self._corrections:
+            parts.append("\n[User Corrections — Always follow these]\n" +
+                        "\n".join(f"- {c}" for c in self._corrections[-5:]))
+
+        # Vector memory context
         if relevant_context:
             parts.append(relevant_context)
 
-        # Add extra context
+        # Learned patterns
+        if learned_context:
+            parts.append(learned_context)
+
+        # Extra context from caller
         if extra_context:
-            ctx_str = "\n".join(f"- {k}: {v}" for k, v in extra_context.items() if v)
-            if ctx_str:
-                parts.append(f"\nAdditional context:\n{ctx_str}")
+            ctx_items = [(k, v) for k, v in extra_context.items()
+                        if v and k not in ("session_id", "task")]
+            if ctx_items:
+                parts.append("\n[Context]\n" + "\n".join(f"- {k}: {v}" for k, v in ctx_items))
 
         return "\n\n".join(parts)
 
@@ -330,7 +561,8 @@ class BaseAgent(abc.ABC):
         parts = []
         for r in results:
             if r.success:
-                parts.append(f"[{r.tool_name}] SUCCESS:\n{r.output[:2000]}")
+                output = r.output[:2000] if r.output else "(no output)"
+                parts.append(f"[{r.tool_name}] SUCCESS ({r.execution_time_ms:.0f}ms):\n{output}")
             else:
                 parts.append(f"[{r.tool_name}] FAILED: {r.error}")
         return "\n\n".join(parts)
@@ -344,6 +576,7 @@ class BaseAgent(abc.ABC):
                 agent_id=self.id,
                 agent_role=self.role.value,
                 data=data,
+                playbook_id=self.playbook_id,
             )
         except Exception:
             pass
@@ -356,7 +589,6 @@ class BaseAgent(abc.ABC):
         return settings.default_light_model
 
     def _role_name(self) -> str:
-        """Human-friendly name for this role."""
         names = {
             AgentRole.ORCHESTRATOR: "Conductor",
             AgentRole.RESEARCHER: "Explorer",
@@ -371,7 +603,6 @@ class BaseAgent(abc.ABC):
         return names.get(self.role, "Agent")
 
     def _avatar_color(self) -> str:
-        """Color for UI avatar."""
         colors = {
             AgentRole.ORCHESTRATOR: "#f59e0b",
             AgentRole.RESEARCHER: "#06b6d4",
