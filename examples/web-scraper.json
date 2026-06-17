@@ -1,0 +1,34 @@
+{
+  "name": "Web Scraper Pipeline",
+  "description": "Build and execute a web scraping pipeline to extract structured data from a target website",
+  "steps": [
+    {
+      "id": 1,
+      "title": "Analyze target site structure",
+      "agent_role": "researcher",
+      "description": "Visit the target website and analyze its HTML structure, identify the data elements to extract, determine pagination patterns, and note any anti-scraping measures.",
+      "expected_output": "Site analysis report with DOM selectors, pagination logic, rate limiting notes, and data schema"
+    },
+    {
+      "id": 2,
+      "title": "Write scraper code",
+      "agent_role": "coder",
+      "description": "Implement the web scraper with proper error handling, rate limiting, retry logic, and data extraction. Handle pagination and dynamic content loading if needed.",
+      "expected_output": "Complete scraper script with extraction logic, error handling, and respectful rate limiting"
+    },
+    {
+      "id": 3,
+      "title": "Test the scraper",
+      "agent_role": "executor",
+      "description": "Run the scraper against a small sample of pages to verify data extraction accuracy. Check for edge cases, missing data handling, and performance.",
+      "expected_output": "Test results showing extraction accuracy, performance metrics, and any issues found"
+    },
+    {
+      "id": 4,
+      "title": "Format and export output",
+      "agent_role": "writer",
+      "description": "Format the extracted data into clean, structured output formats (JSON, CSV). Add metadata, timestamps, and generate a summary of the scraped data.",
+      "expected_output": "Formatted data files (JSON/CSV) with metadata and a summary report of extracted records"
+    }
+  ]
+}

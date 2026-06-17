@@ -1,0 +1,41 @@
+{
+  "name": "Build Chrome Dino Game Clone",
+  "description": "Create a complete Chrome dinosaur game clone with HTML, CSS, and JavaScript",
+  "steps": [
+    {
+      "id": 1,
+      "title": "Plan game architecture",
+      "agent_role": "planner",
+      "description": "Design the game architecture including game loop structure, entity system, rendering approach, and input handling. Define the core classes and their relationships.",
+      "expected_output": "A detailed architecture document with class diagrams, game loop design, and component breakdown"
+    },
+    {
+      "id": 2,
+      "title": "Write HTML/CSS/JS game foundation",
+      "agent_role": "coder",
+      "description": "Implement the base game with HTML5 canvas, game loop, dinosaur character with jump mechanics, ground scrolling, and basic rendering",
+      "expected_output": "A working HTML file with canvas-based game showing a jumping dinosaur on scrolling ground"
+    },
+    {
+      "id": 3,
+      "title": "Add collision detection",
+      "agent_role": "coder",
+      "description": "Implement obstacle generation (cacti and pterodactyls) with hitbox-based collision detection. Add game over state and restart functionality.",
+      "expected_output": "Game with randomly spawning obstacles, accurate collision detection, and game over/restart flow"
+    },
+    {
+      "id": 4,
+      "title": "Add scoring system",
+      "agent_role": "coder",
+      "description": "Implement distance-based scoring, high score persistence using localStorage, speed progression, day/night cycle, and sound effects",
+      "expected_output": "Complete game with score display, high score tracking, increasing difficulty, and visual polish"
+    },
+    {
+      "id": 5,
+      "title": "Test and review",
+      "agent_role": "critic",
+      "description": "Play-test the game for bugs, review code quality, check performance on different screen sizes, and suggest improvements",
+      "expected_output": "A review document with identified issues, performance notes, and suggested enhancements"
+    }
+  ]
+}

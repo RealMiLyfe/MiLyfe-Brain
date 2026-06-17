@@ -1,0 +1,34 @@
+{
+  "name": "Research Report Generator",
+  "description": "Research a topic thoroughly and produce a well-structured academic-style report",
+  "steps": [
+    {
+      "id": 1,
+      "title": "Research the topic",
+      "agent_role": "researcher",
+      "description": "Conduct comprehensive research on the given topic. Gather information from multiple perspectives, identify key findings, notable experts, recent developments, and contrasting viewpoints.",
+      "expected_output": "Organized research notes with sources, key findings, statistics, and expert opinions"
+    },
+    {
+      "id": 2,
+      "title": "Outline report structure",
+      "agent_role": "planner",
+      "description": "Create a detailed report outline with sections, subsections, and key points to cover in each. Ensure logical flow from introduction through analysis to conclusion.",
+      "expected_output": "A hierarchical outline with section titles, key arguments, and supporting evidence placement"
+    },
+    {
+      "id": 3,
+      "title": "Write the full report",
+      "agent_role": "writer",
+      "description": "Write the complete report following the outline. Include an executive summary, introduction, body sections with analysis, conclusion, and references. Use clear academic prose.",
+      "expected_output": "A complete markdown report with all sections, proper citations, and professional formatting"
+    },
+    {
+      "id": 4,
+      "title": "Review and edit",
+      "agent_role": "critic",
+      "description": "Review the report for accuracy, coherence, grammar, and completeness. Check that claims are supported, arguments are logical, and the writing is clear and engaging.",
+      "expected_output": "An edited version of the report with tracked changes and a summary of improvements made"
+    }
+  ]
+}

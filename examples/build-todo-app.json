@@ -1,0 +1,48 @@
+{
+  "name": "Build Full-Stack Todo App",
+  "description": "Create a complete full-stack todo application with backend API, frontend UI, and persistent storage",
+  "steps": [
+    {
+      "id": 1,
+      "title": "Design application architecture",
+      "agent_role": "designer",
+      "description": "Design the overall application architecture including data models, API endpoints, component hierarchy, and state management approach. Choose appropriate technologies.",
+      "expected_output": "Architecture document with ER diagram, API spec, component tree, and technology choices"
+    },
+    {
+      "id": 2,
+      "title": "Create backend API",
+      "agent_role": "coder",
+      "description": "Implement a RESTful API with endpoints for CRUD operations on todos: create, read (list/single), update, delete. Include input validation and proper error handling.",
+      "expected_output": "Working backend API with all CRUD endpoints, validation, and error responses"
+    },
+    {
+      "id": 3,
+      "title": "Create frontend UI",
+      "agent_role": "coder",
+      "description": "Build a responsive frontend with todo list view, add form, edit capability, delete confirmation, and status toggling. Include loading states and error handling.",
+      "expected_output": "Complete frontend UI with all CRUD interactions, responsive design, and polished UX"
+    },
+    {
+      "id": 4,
+      "title": "Add persistence layer",
+      "agent_role": "coder",
+      "description": "Integrate a database for persistent storage. Set up migrations, connection pooling, and ensure data integrity with proper constraints.",
+      "expected_output": "Database integration with migrations, models, and verified data persistence"
+    },
+    {
+      "id": 5,
+      "title": "Write tests",
+      "agent_role": "critic",
+      "description": "Write comprehensive tests including unit tests for business logic, integration tests for API endpoints, and end-to-end tests for critical user flows.",
+      "expected_output": "Test suite with unit, integration, and e2e tests achieving >80% code coverage"
+    },
+    {
+      "id": 6,
+      "title": "Write documentation",
+      "agent_role": "writer",
+      "description": "Create complete project documentation including README with setup instructions, API documentation, deployment guide, and contributing guidelines.",
+      "expected_output": "Full documentation set with README, API docs, and deployment instructions"
+    }
+  ]
+}

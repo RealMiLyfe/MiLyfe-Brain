@@ -1,0 +1,36 @@
+[project]
+name = "milyfe-brain"
+version = "1.0.0"
+description = "MiLyfe Brain - Multi-agent AI orchestration platform"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[project.scripts]
+milyfe = "cli:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "S", "B", "A", "COM", "C4", "ICN", "PIE", "T20", "RET", "SLF", "SIM"]
+ignore = ["S101", "COM812", "ISC001"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "core", "agents", "tools"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+
+[build-system]
+requires = ["setuptools>=74.0.0"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,64 @@
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "${CHROMA_PORT:-8400}:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    restart: unless-stopped
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6479}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  backend:
+    build: ./backend
+    ports:
+      - "${BACKEND_PORT:-8200}:8200"
+    volumes:
+      - workspace_data:/workspace
+      - db_data:/data
+    depends_on:
+      chromadb:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  chroma_data:
+  redis_data:
+  workspace_data:
+  db_data:
