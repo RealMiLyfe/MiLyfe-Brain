@@ -196,9 +196,32 @@ class BaseAgent(ABC):
         self.status = AgentStatus.THINKING
         self.last_active = time.time()
 
+        # Recall relevant context from vector memory (ChromaDB)
+        recall_context = ""
+        try:
+            from memory.vector_store import vector_store
+            if vector_store.is_available:
+                results = await vector_store.query(
+                    collection_name=f"agent_{self.role.value}",
+                    query_texts=[task[:500]],
+                    n_results=3,
+                )
+                if results and results[0].get("documents"):
+                    docs = results[0]["documents"]
+                    if docs:
+                        recall_context = "\n\n## Relevant Past Context\n" + "\n---\n".join(
+                            doc[:300] for doc in docs if doc
+                        )
+        except Exception as e:
+            logger.debug("Vector recall failed (non-fatal): %s", e)
+
         # Build initial messages
+        system_prompt = self._build_system_prompt()
+        if recall_context:
+            system_prompt += recall_context
+
         messages: List[Dict[str, str]] = [
-            {"role": "system", "content": self._build_system_prompt()},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": task},
         ]
 
@@ -257,6 +280,23 @@ class BaseAgent(ABC):
             self.status = AgentStatus.ERROR
             final_response = f"Error during thinking: {str(e)}"
             logger.error("Agent %s think() error: %s", self.name, e, exc_info=True)
+
+        # Store result in vector memory for future recall
+        if final_response and self.status == AgentStatus.COMPLETED:
+            try:
+                from memory.vector_store import vector_store
+                if vector_store.is_available:
+                    await vector_store.add_documents(
+                        collection_name=f"agent_{self.role.value}",
+                        documents=[f"Task: {task[:200]}\nResult: {final_response[:500]}"],
+                        metadatas=[{
+                            "agent_id": self.id,
+                            "role": self.role.value,
+                            "timestamp": str(time.time()),
+                        }],
+                    )
+            except Exception as e:
+                logger.debug("Vector store save failed (non-fatal): %s", e)
 
         # Post completion to message bus
         await self._publish_status(final_response)

@@ -95,6 +95,8 @@ class ToolRegistry:
         arguments: Dict[str, Any],
         *,
         approved: bool = False,
+        agent_id: Optional[str] = None,
+        agent_role: Optional[str] = None,
     ) -> str:
         """Execute a tool by name with the given arguments.
 
@@ -102,13 +104,15 @@ class ToolRegistry:
             name: Tool name to execute.
             arguments: Keyword arguments to pass to the tool handler.
             approved: Whether the call has been pre-approved (for approve-level tools).
+            agent_id: ID of the requesting agent (for approval tracking).
+            agent_role: Role of the requesting agent.
 
         Returns:
             String result from the tool execution.
 
         Raises:
             ValueError: If the tool is not found.
-            PermissionError: If the tool is blocked or requires unapproved approval.
+            PermissionError: If the tool is blocked or approval denied.
         """
         tool = self._tools.get(name)
         if tool is None:
@@ -119,10 +123,55 @@ class ToolRegistry:
         # Permission enforcement
         if permission == Permission.BLOCKED:
             raise PermissionError(f"Tool '{name}' is blocked and cannot be executed.")
+
         if permission == Permission.APPROVE and not approved:
-            raise PermissionError(
-                f"Tool '{name}' requires approval. Set approved=True after user confirmation."
-            )
+            # Request human approval via the approval service
+            try:
+                from safety.approvals import approval_service, ApprovalStatus
+                from agents.message_bus import get_message_bus, Topic
+
+                # Notify frontend via message bus
+                bus = get_message_bus()
+                desc = f"Agent wants to execute '{name}' with args: {arguments}"
+                
+                # Publish approval request event for WebSocket clients
+                approval_request = await approval_service.request_approval(
+                    action_type=name,
+                    description=desc,
+                    details=str(arguments)[:500],
+                    agent_id=agent_id,
+                    agent_role=agent_role,
+                    timeout=300.0,
+                )
+
+                # Emit event so frontend shows the approval dialog
+                await bus.publish(
+                    topic=Topic.STATUS_UPDATE,
+                    payload={
+                        "event_type": "approval_required",
+                        "id": approval_request.id,
+                        "action_type": name,
+                        "description": desc,
+                        "agent_id": agent_id,
+                        "agent_role": agent_role,
+                        "risk_level": "high",
+                    },
+                    sender_id=agent_id or "tool_registry",
+                )
+
+                if approval_request.status == ApprovalStatus.approved:
+                    logger.info("Tool '%s' approved by user", name)
+                elif approval_request.status == ApprovalStatus.denied:
+                    raise PermissionError(f"Tool '{name}' execution denied by user.")
+                else:
+                    raise PermissionError(f"Tool '{name}' approval expired (timeout).")
+            except (ImportError, Exception) as e:
+                if "PermissionError" in type(e).__name__ or isinstance(e, PermissionError):
+                    raise
+                # If approval system isn't available, fall back to blocking
+                raise PermissionError(
+                    f"Tool '{name}' requires approval but approval system unavailable: {e}"
+                )
 
         # Run pre-hooks
         for hook in self._pre_hooks:

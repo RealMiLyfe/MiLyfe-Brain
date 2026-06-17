@@ -114,6 +114,13 @@ class Orchestrator:
                 await db.commit()
                 await self._emit_event("playbook_completed", playbook_id=playbook_id)
 
+                # Learn skill from successful playbook
+                try:
+                    from services.skill_library import skill_library
+                    await skill_library.learn_from_playbook(playbook_id)
+                except Exception as skill_err:
+                    logger.debug("Skill learning failed (non-fatal): %s", skill_err)
+
             except Exception as e:
                 playbook.status = "failed"
                 playbook.error = str(e)
