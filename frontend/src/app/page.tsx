@@ -12,10 +12,12 @@ import { SchedulerView } from "@/components/scheduler/SchedulerView";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useStore } from "@/lib/store";
+import { useWebSocket } from "@/hooks/useWebSocket";
 import { Brain } from "lucide-react";
 
 export default function Home() {
   const activeView = useStore((state) => state.activeView);
+  const { isConnected } = useWebSocket();
 
   const renderContent = () => {
     switch (activeView) {
@@ -59,6 +61,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             <NotificationBell />
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} title={isConnected ? 'Connected' : 'Disconnected'} />
             <ThemeToggle />
           </div>
         </header>

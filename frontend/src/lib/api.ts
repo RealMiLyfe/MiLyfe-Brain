@@ -1,6 +1,6 @@
 // MiLyfe Brain API Client - Full typed API covering all 19 endpoint groups
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8200";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
