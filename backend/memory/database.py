@@ -294,6 +294,8 @@ class ChatSessionRow(Base):
 
 async def init_database():
     """Create all tables if they don't exist. Gracefully handles failures."""
+    global engine, async_session_factory
+
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -311,7 +313,6 @@ async def init_database():
         logger.warning("attempting_memory_fallback")
         try:
             from sqlalchemy.ext.asyncio import create_async_engine as create_fallback
-            global engine, async_session_factory
             engine = create_fallback(
                 "sqlite+aiosqlite:///:memory:",
                 echo=False,
