@@ -12,10 +12,13 @@ import {
   TestTube,
   Rocket,
   Bug,
+  LayoutGrid,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { clsx } from "clsx";
+import { VoiceInput } from "./VoiceInput";
+import { GuidedTemplates } from "./GuidedTemplates";
 
 const QUICK_TEMPLATES = [
   {
@@ -71,6 +74,7 @@ export function PlaybookInput() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const setPlaybook = useStore((state) => state.setPlaybook);
   const setActiveView = useStore((state) => state.setActiveView);
+  const [showGuidedTemplates, setShowGuidedTemplates] = useState(false);
 
   const handleSubmit = async () => {
     if (!prompt.trim()) {
@@ -156,17 +160,22 @@ export function PlaybookInput() {
         transition={{ delay: 0.2 }}
         className="card space-y-4"
       >
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Describe your task in natural language. Be as detailed as you'd like — the AI will plan the steps, spawn the right agents, and execute."
-          className="w-full h-40 p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 font-mono"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              handleSubmit();
-            }
-          }}
-        />
+        <div className="flex items-start gap-2">
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Describe your task in natural language. Be as detailed as you'd like — the AI will plan the steps, spawn the right agents, and execute."
+            className="flex-1 h-40 p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 font-mono"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                handleSubmit();
+              }
+            }}
+          />
+          <div className="flex flex-col gap-2 pt-2">
+            <VoiceInput onTranscript={(text) => setPrompt((prev) => prev ? prev + " " + text : text)} disabled={isSubmitting} />
+          </div>
+        </div>
 
         {/* Bottom bar */}
         <div className="flex items-center justify-between">
@@ -183,6 +192,13 @@ export function PlaybookInput() {
                 </option>
               ))}
             </select>
+            <button
+              onClick={() => setShowGuidedTemplates(!showGuidedTemplates)}
+              className="btn-secondary inline-flex items-center gap-1.5 text-sm"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Templates
+            </button>
             <span className="text-xs text-slate-400">
               {prompt.length > 0 && `${prompt.length} chars`}
             </span>
@@ -204,6 +220,30 @@ export function PlaybookInput() {
           </button>
         </div>
       </motion.div>
+
+      {/* Guided Templates Panel */}
+      {showGuidedTemplates && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          className="overflow-hidden"
+        >
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                Guided Templates
+              </h3>
+              <button
+                onClick={() => setShowGuidedTemplates(false)}
+                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                Close
+              </button>
+            </div>
+            <GuidedTemplates onSelect={(p) => { setPrompt(p); setShowGuidedTemplates(false); }} />
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }
