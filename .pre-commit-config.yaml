@@ -1,0 +1,76 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# MiLyfe Brain — Pre-commit Configuration
+# Install: pip install pre-commit && pre-commit install
+# ═══════════════════════════════════════════════════════════════════════════════
+
+repos:
+  # ─── General Hooks ──────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'production']
+
+  # ─── Python: Ruff (Linter + Formatter) ─────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.0
+    hooks:
+      - id: ruff
+        args: ['--fix', '--exit-non-zero-on-fix']
+        types_or: [python, pyi]
+        files: ^backend/
+      - id: ruff-format
+        types_or: [python, pyi]
+        files: ^backend/
+
+  # ─── Frontend: ESLint ───────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.5.0
+    hooks:
+      - id: eslint
+        files: ^frontend/.*\.(js|jsx|ts|tsx)$
+        types: [file]
+        additional_dependencies:
+          - eslint@9.5.0
+          - '@eslint/js@9.5.0'
+          - typescript-eslint@7.13.0
+          - eslint-plugin-react@7.34.3
+          - eslint-plugin-react-hooks@4.6.2
+
+  # ─── Secret Detection ──────────────────────────────────────────────────────
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            .*\.lock|
+            .*\.svg|
+            \.env\.example|
+            backend/tests/.*
+          )$
+
+  # ─── Security: Bandit (Python) ─────────────────────────────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9
+    hooks:
+      - id: bandit
+        args: ['-c', 'backend/pyproject.toml', '-r']
+        files: ^backend/
+        exclude: ^backend/tests/
+
+  # ─── Markdown Lint ──────────────────────────────────────────────────────────
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.41.0
+    hooks:
+      - id: markdownlint-fix
+        args: ['--disable', 'MD013', 'MD033', 'MD041', '--']

@@ -1,0 +1,111 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: milyfe-production
+
+resources:
+  - ../../base
+  - pdb.yaml
+
+namePrefix: prod-
+
+patches:
+  - target:
+      kind: Deployment
+      name: milyfe-backend
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "4"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "4Gi"
+
+  - target:
+      kind: Deployment
+      name: milyfe-frontend
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: milyfe-backend-hpa
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 15
+
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: milyfe-frontend-hpa
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 8
+
+  - target:
+      kind: Ingress
+      name: milyfe-ingress
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: api.milyfe.ai
+      - op: add
+        path: /metadata/annotations/alb.ingress.kubernetes.io~1certificate-arn
+        value: "${ACM_CERTIFICATE_ARN}"
+      - op: add
+        path: /metadata/annotations/alb.ingress.kubernetes.io~1wafv2-acl-arn
+        value: "${WAF_ACL_ARN}"
+
+  - target:
+      kind: PersistentVolumeClaim
+      name: chromadb-pvc
+    patch: |
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 100Gi
+
+  - target:
+      kind: PersistentVolumeClaim
+      name: workspace-pvc
+    patch: |
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 200Gi
+
+configMapGenerator:
+  - name: milyfe-config
+    behavior: merge
+    literals:
+      - AUTH_ENABLED=true
+      - CORS_ALLOW_ALL=false
+      - CORS_ALLOWED_ORIGINS=https://milyfe.ai,https://app.milyfe.ai
+      - LOG_LEVEL=WARNING
+      - SENTRY_ENABLED=true
+      - SENTRY_ENVIRONMENT=production
+      - OTEL_ENABLED=true
+
+images:
+  - name: backend
+    newName: ghcr.io/realmilyfe/milyfe-brain/backend
+    newTag: v2.0.0
+  - name: frontend
+    newName: ghcr.io/realmilyfe/milyfe-brain/frontend
+    newTag: v2.0.0

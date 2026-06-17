@@ -1,0 +1,105 @@
+name: CD - Staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  CLUSTER_NAME: milyfe-staging
+  NAMESPACE: milyfe-staging
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: v1.28.0
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > ~/.kube/config
+
+      - name: Update image tags in Kustomize
+        run: |
+          cd k8s/overlays/staging
+          kustomize edit set image \
+            backend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.sha }} \
+            frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.sha }}
+
+      - name: Deploy to staging
+        run: |
+          kubectl apply -k k8s/overlays/staging -n ${{ env.NAMESPACE }}
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/milyfe-backend -n ${{ env.NAMESPACE }} --timeout=300s
+          kubectl rollout status deployment/milyfe-frontend -n ${{ env.NAMESPACE }} --timeout=300s
+
+      - name: Run smoke tests
+        run: |
+          STAGING_URL=$(kubectl get svc milyfe-frontend -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          curl -f "http://${STAGING_URL}/health" || exit 1
+
+      - name: Notify on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "Staging deployment FAILED for ${{ github.sha }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  run-e2e-tests:
+    name: E2E Tests on Staging
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: |
+          pip install httpx pytest pytest-asyncio locust
+
+      - name: Run E2E tests against staging
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          cd tests/e2e
+          pytest . -v --timeout=120
+
+      - name: Run load test (short burst)
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+        run: |
+          cd tests/load
+          locust -f locustfile.py --headless -u 10 -r 2 --run-time 60s \
+            --host=${{ secrets.STAGING_URL }} --csv=staging-load
+          cat staging-load_stats.csv

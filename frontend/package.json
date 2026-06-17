@@ -1,0 +1,37 @@
+{
+  "name": "milyfe-brain-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.6.0",
+    "tailwindcss": "^3.4.0",
+    "zustand": "^5.0.0",
+    "lucide-react": "^0.460.0",
+    "framer-motion": "^11.11.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.0",
+    "class-variance-authority": "^0.7.0",
+    "sonner": "^1.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.0.0",
+    "jest": "^29.7.0",
+    "@jest/globals": "^29.7.0"
+  }
+}

@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: milyfe
+
+resources:
+  - namespace.yaml
+  - backend/deployment.yaml
+  - backend/service.yaml
+  - backend/hpa.yaml
+  - backend/serviceaccount.yaml
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  - frontend/hpa.yaml
+  - chromadb/deployment.yaml
+  - chromadb/service.yaml
+  - chromadb/pvc.yaml
+  - redis/deployment.yaml
+  - redis/service.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+  - configmap.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: milyfe-brain
+  app.kubernetes.io/managed-by: kustomize

@@ -1,0 +1,60 @@
+version: "3.9"
+
+# ─── GPU Override (AMD ROCm) ─────────────────────────────────────────────
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+#
+# Adds Ollama service with AMD ROCm GPU passthrough.
+# For NVIDIA GPUs, replace the device section with:
+#   deploy:
+#     resources:
+#       reservations:
+#         devices:
+#           - driver: nvidia
+#             count: all
+#             capabilities: [gpu]
+
+services:
+  # ─── Ollama LLM Server (with GPU) ───────────────────────────────────
+  ollama:
+    image: ollama/ollama:rocm
+    container_name: milyfe-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - milyfe-network
+
+  # ─── Backend Override (add Ollama dependency) ────────────────────────
+  backend:
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+
+volumes:
+  ollama_data:
+    driver: local

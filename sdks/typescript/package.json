@@ -1,0 +1,32 @@
+{
+  "name": "@milyfe/brain-sdk",
+  "version": "2.0.0",
+  "description": "TypeScript SDK for the MiLyfe Brain AI Agent Platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "module": "dist/index.mjs",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "lint": "eslint src/",
+    "test": "vitest --run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["milyfe", "brain", "ai", "agents", "llm", "sdk"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RealMiLyfe/MiLyfe-Brain",
+    "directory": "sdks/typescript"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^1.0.0",
+    "eslint": "^8.56.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
