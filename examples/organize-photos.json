@@ -1,0 +1,39 @@
+{
+  "title": "Organize Photos by Date",
+  "description": "Scan a photo directory, read EXIF data, and organize photos into YYYY/MM folders",
+  "steps": [
+    {
+      "id": "step_1",
+      "description": "List all image files in the target directory recursively",
+      "agent_role": "executor",
+      "depends_on": [],
+      "complexity": "light",
+      "tools_needed": ["file_list", "glob_search"]
+    },
+    {
+      "id": "step_2",
+      "description": "Read EXIF data from each photo to extract date taken",
+      "agent_role": "coder",
+      "depends_on": ["step_1"],
+      "complexity": "medium",
+      "tools_needed": ["code_exec"]
+    },
+    {
+      "id": "step_3",
+      "description": "Create year/month directory structure and move files",
+      "agent_role": "executor",
+      "depends_on": ["step_2"],
+      "complexity": "medium",
+      "tools_needed": ["shell_exec", "file_write"]
+    },
+    {
+      "id": "step_4",
+      "description": "Generate a summary report of organized files",
+      "agent_role": "writer",
+      "depends_on": ["step_3"],
+      "complexity": "light",
+      "tools_needed": ["file_write"]
+    }
+  ],
+  "auto_execute": false
+}
