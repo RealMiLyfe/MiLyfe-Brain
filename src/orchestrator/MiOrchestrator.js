@@ -36,6 +36,11 @@ import { EternalLoop } from '../loops/EternalLoop.js';
 import { ConsistencyEngine } from '../loops/ConsistencyEngine.js';
 import { Guardrails } from '../guardrails/Guardrails.js';
 import { ToolSystem } from '../tools/ToolSystem.js';
+import { UltimaLoop } from '../ultima/UltimaLoop.js';
+import { Dimensions } from '../ultima/dimensions/index.js';
+import { TwelveLaws } from '../ultima/laws/TwelveLaws.js';
+import { SafetySystems } from '../ultima/safety/SafetySystems.js';
+import { TemporalScales } from '../ultima/temporal/TemporalScales.js';
 
 export class MiOrchestrator {
   constructor(config) {
@@ -58,6 +63,18 @@ export class MiOrchestrator {
     this.consistency = new ConsistencyEngine(config, this.identity);
     this.guardrails = new Guardrails(config);
     this.tools = new ToolSystem(config);
+
+    // === ULTIMA LOOP v2.0 ===
+    this.ultimaLoop = new UltimaLoop(config, {
+      emotional: this.emotional,
+      identity: this.identity,
+      empathy: this.empathy,
+      intuition: this.intuition
+    });
+    this.dimensions = new Dimensions(config);
+    this.twelveLaws = new TwelveLaws();
+    this.safetySystems = new SafetySystems(config);
+    this.temporalScales = new TemporalScales(config);
   }
 
   /**
@@ -81,6 +98,9 @@ export class MiOrchestrator {
     console.log('  Guardrails: Active');
     console.log('  Tools: ' + this.tools.getCapabilities().length + ' registered');
     console.log('  Consistency Engine: Monitoring');
+    console.log('  Ultima Loop v2.0: ONLINE (10 stages × 6 dimensions × 12 laws)');
+    console.log('  Safety Systems: 6 active');
+    console.log('  Temporal Scales: 5 simultaneous');
     console.log('');
     console.log('  "The right person understands before you speak."');
     console.log('');
@@ -221,6 +241,27 @@ export class MiOrchestrator {
 
     const processingDuration = Date.now() - processingStart;
 
+    // ========================================
+    // PHASE 9.5: ULTIMA LOOP CYCLE (The Atomic Ouroboros)
+    // ========================================
+    const ultimaCycle = this.ultimaLoop.cycle(input, {
+      ...context,
+      complexity: unifiedResponse.coherence?.score > 0.9 ? 'simple' :
+                  unifiedResponse.coherence?.score > 0.7 ? 'moderate' : 'complex'
+    });
+
+    // Apply 6 dimensions
+    const dimensionState = this.dimensions.apply(ultimaCycle);
+
+    // Audit against 12 laws
+    const lawsAudit = this.twelveLaws.audit(ultimaCycle);
+
+    // Update temporal scales
+    this.temporalScales.update(ultimaCycle);
+
+    // Check safety systems
+    const stuckCheck = this.safetySystems.detectStuck(this.ultimaLoop.cycleHistory);
+
     // Record for post-reflection
     const interactionRecord = {
       input,
@@ -232,11 +273,34 @@ export class MiOrchestrator {
       empathyDirective: empathyRead.directive,
       shadowFlags: shadowRead.selfCheck,
       unityCoherence: unifiedResponse.coherence,
-      consistencyScore: this.consistency.metrics.overallScore
+      consistencyScore: this.consistency.metrics.overallScore,
+      ultimaCycle: {
+        depthMode: ultimaCycle.depthMode,
+        spiralCertificate: ultimaCycle.spiralCertificate,
+        lawsAudit: lawsAudit.overall,
+        dimensionState: {
+          tempo: dimensionState.rhythm?.tempo,
+          resonance: dimensionState.resonance?.phaseRelationship,
+          season: dimensionState.rhythm?.season
+        }
+      }
     };
 
     // Post-reflection (async, doesn't block response)
     this._postProcess(interactionRecord);
+
+    // Attach Ultima Loop data to response
+    responseDirective.ultimaCycle = {
+      depthMode: ultimaCycle.depthMode,
+      spiralCertificate: ultimaCycle.spiralCertificate,
+      lawsAudit: lawsAudit.overall,
+      dimensionState: {
+        tempo: dimensionState.rhythm?.tempo,
+        resonance: dimensionState.resonance?.phaseRelationship,
+        season: dimensionState.rhythm?.season
+      },
+      stuckCheck: stuckCheck.stuck ? stuckCheck : null
+    };
 
     return responseDirective;
   }
